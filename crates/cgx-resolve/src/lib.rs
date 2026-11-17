@@ -88,7 +88,11 @@ pub use graph::{
 };
 pub use ifds::{IfdsStats, DEFAULT_MAX_SUMMARY_EDGES};
 pub use input::{FileInput, FileSummary, LinkOpts};
-pub use link::{build_global_index, canonicalize, collect_field_init_index, link, LinkSession};
+pub use link::{
+    build_global_index, canonicalize, collect_field_init_index,
+    collect_field_init_index_from_summaries, collect_field_init_owned_index_from_summaries, link,
+    LinkSession,
+};
 pub use symtab::SymbolTable;
 pub use receiver::{CatStats, PrecisionStats};
 pub use rta::{run_rta, RtaStats};

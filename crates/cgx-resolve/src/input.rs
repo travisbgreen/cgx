@@ -57,6 +57,11 @@ pub struct FileSummary {
     pub imports: Vec<ImportFact>,
     pub exports: Vec<ExportFact>,
     pub impl_relations: Vec<ImplRelation>,
+    /// `.field = <ident>` designated-initializer bindings (2026-11-17, part of
+    /// `LinkOpts::type_layer_disambiguation`). Small (one entry per struct
+    /// literal field assignment, not per-ref/per-scope) — cheap to carry at
+    /// summary scale, unlike `refs`/`scopes`.
+    pub field_inits: Vec<cgx_frontend::facts::FieldInitFact>,
 }
 
 impl FileSummary {
@@ -79,6 +84,7 @@ impl FileSummary {
             imports: facts.imports.clone(),
             exports: facts.exports.clone(),
             impl_relations: facts.impl_relations.clone(),
+            field_inits: facts.field_inits.clone(),
         }
     }
 }

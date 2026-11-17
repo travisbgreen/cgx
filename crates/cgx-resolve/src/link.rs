@@ -55,6 +55,49 @@ pub fn collect_field_init_index(
     index
 }
 
+/// Borrowed `(field_name, file)` index, built from [`FileSummary`]s rather than
+/// full [`FileInput`]s — the streaming/chunked large-corpus path
+/// ([`build_global_index`]/[`LinkSession`]) only has summaries for the whole
+/// corpus at once (full `FileFacts` are read one file at a time), so it can't
+/// use [`link`]'s own inline `field_init_files` local or borrow from
+/// [`FileInput`]s the way that does. `FileSummary` now carries `field_inits`
+/// (2026-11-17) specifically so this index can be built here, once, up front —
+/// same shape and lifetime pattern as `build_global_index`'s node/symbol-table
+/// construction from summaries alone.
+pub fn collect_field_init_index_from_summaries(
+    summaries: &[FileSummary],
+) -> std::collections::BTreeSet<(&str, &str)> {
+    summaries
+        .iter()
+        .flat_map(|f| {
+            f.field_inits
+                .iter()
+                .map(move |fi| (fi.field_name.as_str(), f.path.as_str()))
+        })
+        .collect()
+}
+
+/// Owned `field_name -> {files}` variant of
+/// [`collect_field_init_index_from_summaries`], same shape as
+/// [`collect_field_init_index`] — for `sig::run_sig`'s post-pass, which (like
+/// that function's own doc comment explains for the `FileInput` case) runs
+/// after `summaries` may have gone out of scope at the call site.
+pub fn collect_field_init_owned_index_from_summaries(
+    summaries: &[FileSummary],
+) -> std::collections::BTreeMap<String, std::collections::BTreeSet<String>> {
+    let mut index: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> =
+        std::collections::BTreeMap::new();
+    for f in summaries {
+        for fi in &f.field_inits {
+            index
+                .entry(fi.field_name.clone())
+                .or_default()
+                .insert(f.path.clone());
+        }
+    }
+    index
+}
+
 pub fn link(inputs: &[FileInput<'_>], opts: &LinkOpts) -> ResolvedGraph {
     // --- Pass 0: materialize nodes and assign dense ids by canonical sort. ---
     let (mut nodes, def_to_node) = build_nodes(inputs);
@@ -403,6 +446,7 @@ fn resolve_file_into(
     unresolved: &mut Vec<UnresolvedRef>,
     next_group: &mut u32,
     ledger: &mut Ledger,
+    field_init_files: Option<&std::collections::BTreeSet<(&str, &str)>>,
 ) {
     let facts = file.facts;
     let bindings = collect_import_bindings(&facts.imports);
@@ -432,7 +476,7 @@ fn resolve_file_into(
             next_group,
             None,
             ledger,
-            None, // streaming/chunked path — not wired, see `link()`'s comment
+            field_init_files,
         );
     }
     for rel in &facts.impl_relations {
@@ -486,6 +530,12 @@ pub struct LinkSession<'t> {
     unresolved: Vec<UnresolvedRef>,
     next_group: u32,
     ledger: Ledger,
+    /// Built once, up front, from the same summaries [`build_global_index`]
+    /// used — see [`collect_field_init_index_from_summaries`]. `None` when
+    /// `opts.type_layer_disambiguation` is off (the common case): no index is
+    /// built at all, so turning the flag off costs nothing extra here, same
+    /// posture as `link()`'s own local.
+    field_init_files: Option<std::collections::BTreeSet<(&'t str, &'t str)>>,
 }
 
 impl<'t> LinkSession<'t> {
@@ -493,6 +543,20 @@ impl<'t> LinkSession<'t> {
         table: &'t SymbolTable,
         def_to_node: &'t std::collections::BTreeMap<String, NodeId>,
         opts: LinkOpts,
+    ) -> Self {
+        Self::new_with_field_inits(table, def_to_node, opts, None)
+    }
+
+    /// Like [`LinkSession::new`], but with a field-init index already built
+    /// from the corpus's [`FileSummary`]s (2026-11-17) — pass `None` when
+    /// `opts.type_layer_disambiguation` is off, or when the caller hasn't
+    /// built the index (equivalent to the flag being a no-op, same as before
+    /// this was wired in).
+    pub fn new_with_field_inits(
+        table: &'t SymbolTable,
+        def_to_node: &'t std::collections::BTreeMap<String, NodeId>,
+        opts: LinkOpts,
+        field_init_files: Option<std::collections::BTreeSet<(&'t str, &'t str)>>,
     ) -> Self {
         assert!(
             !opts.dataflow && !opts.receiver_narrowing,
@@ -508,6 +572,7 @@ impl<'t> LinkSession<'t> {
             unresolved: Vec::new(),
             next_group: 0,
             ledger,
+            field_init_files,
         }
     }
 
@@ -526,6 +591,7 @@ impl<'t> LinkSession<'t> {
             &mut self.unresolved,
             &mut self.next_group,
             &mut self.ledger,
+            self.field_init_files.as_ref(),
         );
     }
 
