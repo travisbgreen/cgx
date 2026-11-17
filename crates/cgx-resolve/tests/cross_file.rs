@@ -668,6 +668,220 @@ fn name_arity_cap_keeps_only_the_nearest_candidates_and_drops_the_rest() {
 }
 
 #[test]
+fn type_layer_disambiguation_prototype_narrows_bare_call_by_file_field_init() {
+    // Two files each define a same-name `read` helper (the common per-file
+    // ops-struct idiom: `static int read(...)` matching the field it's wired
+    // into). Only driver_a.c actually has a `.read = read` designated
+    // initializer; driver_b.c's `read` is dead/unrelated. The call site here
+    // is a bare-identifier RefKind::Call (NOT the field-pointer
+    // RefKind::CallCallback this feature is ultimately motivated by — that
+    // case goes through sig::run_sig instead, not yet wired to this signal;
+    // see LinkOpts::type_layer_disambiguation's doc comment). This test
+    // covers the one real path this prototype actually reaches today: the
+    // Tier-0 global name(+arity) fallback.
+    let mut a = FileBuilder::new();
+    a.def(
+        "driver_a::read",
+        SymbolKind::Function,
+        ScopeId::ROOT,
+        1,
+        PUB,
+        false,
+        Some(3),
+    );
+    let mut a = a.build();
+    a.field_inits.push(cgx_frontend::facts::FieldInitFact {
+        field_name: "read".to_string(),
+        function_name: "read".to_string(),
+        span: cgx_core::provenance::Span::new("src/driver_a.c".to_string(), 10, Some(1)),
+    });
+
+    let mut b = FileBuilder::new();
+    b.def(
+        "driver_b::read",
+        SymbolKind::Function,
+        ScopeId::ROOT,
+        1,
+        PUB,
+        false,
+        Some(3),
+    );
+    let b = b.build();
+    // driver_b.c has NO field_inits entry for "read" at all.
+
+    let mut caller_file = FileBuilder::new();
+    let run = caller_file.scope(ScopeId::ROOT, Some("caller::run"));
+    caller_file.def(
+        "caller::run",
+        SymbolKind::Function,
+        ScopeId::ROOT,
+        1,
+        PUB,
+        false,
+        Some(0),
+    );
+    caller_file.raw_ref(
+        &["read"],
+        run,
+        2,
+        RefKind::Call,
+        EdgeCondition::Always,
+        Some(3),
+    );
+    let c = caller_file.build();
+
+    let inputs = vec![
+        input("src/driver_a.c", "c", &a),
+        input("src/driver_b.c", "c", &b),
+        input("src/caller.c", "c", &c),
+    ];
+
+    // Flag OFF (default): both same-name candidates survive, same as today.
+    let off = link(&inputs, &LinkOpts::default());
+    let fqn_of_off: std::collections::BTreeMap<_, _> =
+        off.node_records().map(|n| (n.id, n.fqn.clone())).collect();
+    let kept_off: std::collections::BTreeSet<&str> = off
+        .edge_records()
+        .filter(|e| e.rule.starts_with("name-arity"))
+        .map(|e| fqn_of_off.get(&e.dst).map(String::as_str).unwrap())
+        .collect();
+    assert_eq!(
+        kept_off,
+        std::collections::BTreeSet::from(["driver_a::read", "driver_b::read"]),
+        "flag off must reproduce today's uncapped Tier-0 behavior exactly"
+    );
+
+    // Flag ON: only driver_a::read (the file with a matching designated
+    // initializer) should survive.
+    let opts = LinkOpts {
+        type_layer_disambiguation: true,
+        ..LinkOpts::default()
+    };
+    let on = link(&inputs, &opts);
+    let fqn_of_on: std::collections::BTreeMap<_, _> =
+        on.node_records().map(|n| (n.id, n.fqn.clone())).collect();
+    let kept_on: std::collections::BTreeSet<&str> = on
+        .edge_records()
+        .filter(|e| e.rule.starts_with("name-arity"))
+        .map(|e| fqn_of_on.get(&e.dst).map(String::as_str).unwrap())
+        .collect();
+    assert_eq!(
+        kept_on,
+        std::collections::BTreeSet::from(["driver_a::read"]),
+        "flag on must narrow to only the file with a matching designated initializer"
+    );
+}
+
+/// The actual motivating case (2026-11-17 increment): a C struct function-pointer
+/// member call (`obj->read(...)`, `RefKind::CallCallback`), not the bare-identifier
+/// `RefKind::Call` the prior increment covered. This reaches `sig::run_sig`, not
+/// `link.rs`'s Tier-0 fallback — proves the field-name signal now threads through
+/// to the pass the feature was actually built for.
+#[test]
+fn type_layer_disambiguation_prototype_narrows_callcallback_by_file_field_init() {
+    let mut a = FileBuilder::new();
+    a.def(
+        "driver_a::read",
+        SymbolKind::Function,
+        ScopeId::ROOT,
+        1,
+        PUB,
+        false,
+        Some(3),
+    );
+    let mut a = a.build();
+    a.field_inits.push(cgx_frontend::facts::FieldInitFact {
+        field_name: "read".to_string(),
+        function_name: "read".to_string(),
+        span: cgx_core::provenance::Span::new("src/driver_a.c".to_string(), 10, Some(1)),
+    });
+
+    let mut b = FileBuilder::new();
+    b.def(
+        "driver_b::read",
+        SymbolKind::Function,
+        ScopeId::ROOT,
+        1,
+        PUB,
+        false,
+        Some(3),
+    );
+    let b = b.build();
+    // driver_b.c has NO field_inits entry for "read" at all.
+
+    let mut caller_file = FileBuilder::new();
+    let run = caller_file.scope(ScopeId::ROOT, Some("caller::run"));
+    caller_file.def(
+        "caller::run",
+        SymbolKind::Function,
+        ScopeId::ROOT,
+        1,
+        PUB,
+        false,
+        Some(0),
+    );
+    // `obj->read(a, b, c)` — a struct field-pointer call, arity 3, matching
+    // both driver_a::read and driver_b::read's signature.
+    caller_file.raw_ref(
+        &["read"],
+        run,
+        2,
+        RefKind::CallCallback,
+        EdgeCondition::Always,
+        Some(3),
+    );
+    let c = caller_file.build();
+
+    let inputs = vec![
+        input("src/driver_a.c", "c", &a),
+        input("src/driver_b.c", "c", &b),
+        input("src/caller.c", "c", &c),
+    ];
+
+    // Flag OFF: sig::run_sig's existing (lang, arity)-only matching keeps both.
+    let mut off = link(&inputs, &LinkOpts::default());
+    let off_stats = cgx_resolve::run_sig(&mut off, None, false, &Default::default());
+    assert_eq!(off_stats.sites_resolved, 1);
+    let fqn_of_off: std::collections::BTreeMap<_, _> =
+        off.node_records().map(|n| (n.id, n.fqn.clone())).collect();
+    let kept_off: std::collections::BTreeSet<&str> = off
+        .edge_records()
+        .filter(|e| e.rule == "sig-compat")
+        .map(|e| fqn_of_off.get(&e.dst).map(String::as_str).unwrap())
+        .collect();
+    assert_eq!(
+        kept_off,
+        std::collections::BTreeSet::from(["driver_a::read", "driver_b::read"]),
+        "flag off must reproduce today's arity-only sig::run_sig behavior exactly"
+    );
+
+    // Flag ON: narrowed to driver_a::read only, via the field-init index built
+    // from the same `inputs` (mirroring how `extract_and_link_in_memory` builds
+    // it in the real pipeline).
+    let field_init_index = cgx_resolve::collect_field_init_index(&inputs);
+    let opts = LinkOpts {
+        type_layer_disambiguation: true,
+        ..LinkOpts::default()
+    };
+    let mut on = link(&inputs, &opts);
+    let on_stats = cgx_resolve::run_sig(&mut on, None, true, &field_init_index);
+    assert_eq!(on_stats.sites_resolved, 1);
+    let fqn_of_on: std::collections::BTreeMap<_, _> =
+        on.node_records().map(|n| (n.id, n.fqn.clone())).collect();
+    let kept_on: std::collections::BTreeSet<&str> = on
+        .edge_records()
+        .filter(|e| e.rule == "sig-compat")
+        .map(|e| fqn_of_on.get(&e.dst).map(String::as_str).unwrap())
+        .collect();
+    assert_eq!(
+        kept_on,
+        std::collections::BTreeSet::from(["driver_a::read"]),
+        "flag on must narrow the CallsCallback signature-compatible set to the \
+         file with a matching designated initializer — the real motivating case"
+    );
+}
+
+#[test]
 fn re_export_chain_resolves_to_original_definition() {
     // direct.rs defines add; imports.rs does `pub use crate::direct::add`;
     // consumer.rs imports add *from crate::imports* and calls it. Resolution must

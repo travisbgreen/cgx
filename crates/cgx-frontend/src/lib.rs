@@ -59,8 +59,9 @@ pub mod registry;
 
 pub use facts::{
     AnonRoot, BaseExpr, CallArg, CutHint, DataFlowFact, EffectFact, EntrypointHint, ExportFact,
-    FileFacts, ImplRelation, ImportFact, ImportedName, LiteralKind, Name, ParamKind, RawRef,
-    RefKind, RelationKind, Scope, ScopeId, ScopeTree, SymbolDef, TypeExpr, TypeFact, ValueSource,
+    FieldInitFact, FileFacts, ImplRelation, ImportFact, ImportedName, LiteralKind, Name, ParamKind,
+    RawRef, RefKind, RelationKind, Scope, ScopeId, ScopeTree, SymbolDef, TypeExpr, TypeFact,
+    ValueSource,
 };
 pub use fallback::FallbackFrontend;
 pub use frontend::{

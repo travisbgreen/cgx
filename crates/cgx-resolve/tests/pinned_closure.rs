@@ -40,7 +40,7 @@ fn link_ts(facts: &FileFacts) -> ResolvedGraph {
         facts,
     )];
     let mut g = link(&inputs, &LinkOpts::default());
-    run_sig(&mut g, None);
+    run_sig(&mut g, None, false, &Default::default());
     g
 }
 
@@ -140,8 +140,13 @@ fn pinned_call_without_a_lambda_in_scope_falls_back_to_the_fan_out() {
     )];
     let g = link(&inputs, &LinkOpts::default());
     assert!(
-        g.edge_records()
-            .any(|e| e.rule == "indirect:1" && e.kind == EdgeKind::CallsClosure),
+        g.edge_records().any(|e| {
+            // Prototype (2026-11-17): the rule now also carries the syntactic
+            // callee name (`indirect:<arity>:<name>`, here "f") — match the
+            // arity prefix rather than the full string, which is what this
+            // assertion actually cares about.
+            e.rule.starts_with("indirect:1:") && e.kind == EdgeKind::CallsClosure
+        }),
         "an unbindable pinned call becomes the indirect placeholder"
     );
 

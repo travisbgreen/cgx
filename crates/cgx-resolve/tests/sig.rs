@@ -90,9 +90,15 @@ fn indirect_call_resolves_to_the_arity_compatible_function_values_only() {
         .filter(|e| e.kind == EdgeKind::CallsCallback && e.rule.starts_with("indirect"))
         .collect();
     assert_eq!(placeholders.len(), 1, "one indirect placeholder edge");
-    assert_eq!(placeholders[0].rule, "indirect:1", "arity encoded in the rule");
+    // Prototype (2026-11-17): rule now also carries the syntactic callee name
+    // (`indirect:<arity>:<name>`) — check the arity prefix, not the full string.
+    assert!(
+        placeholders[0].rule.starts_with("indirect:1:"),
+        "arity encoded in the rule, got {:?}",
+        placeholders[0].rule
+    );
 
-    let stats = run_sig(&mut g, None);
+    let stats = run_sig(&mut g, None, false, &Default::default());
     assert_eq!(stats.sites_resolved, 1, "the one indirect site is resolved");
     assert_eq!(stats.sites_unmatched, 0);
 
@@ -118,7 +124,7 @@ fn the_signature_compatible_set_is_all_possible_chararta_callscallback() {
     // rule `sig-compat`, and carries a candidate group (a multi-candidate set).
     let facts = callback_with_arity_one_and_two();
     let mut g = link_facts(&facts);
-    run_sig(&mut g, None);
+    run_sig(&mut g, None, false, &Default::default());
 
     let edges: Vec<_> = g.edge_records().filter(|e| e.rule == "sig-compat").collect();
     assert_eq!(edges.len(), 3, "three compatible candidates");
@@ -154,7 +160,7 @@ fn no_compatible_target_leaves_the_call_honestly_dangling() {
     let facts = b.build();
     let mut g = link_facts(&facts);
 
-    let stats = run_sig(&mut g, None);
+    let stats = run_sig(&mut g, None, false, &Default::default());
     assert_eq!(stats.sites_resolved, 0);
     assert_eq!(stats.sites_unmatched, 1, "no arity-3 candidate → unmatched");
     assert_eq!(sig_candidate_dsts(&g).len(), 0, "no sig-compat edge emitted");
@@ -186,11 +192,13 @@ fn unknown_call_site_arity_admits_every_function_value() {
     let mut g = link_facts(&facts);
     assert!(
         g.edge_records()
-            .any(|e| e.rule == "indirect:?" && e.kind == EdgeKind::CallsClosure),
+            // Prototype (2026-11-17): rule now also carries the callee name
+            // (`indirect:?:cb`) — check the arity-unknown prefix, not the full string.
+            .any(|e| e.rule.starts_with("indirect:?:") && e.kind == EdgeKind::CallsClosure),
         "arity-less placeholder encodes `indirect:?`"
     );
 
-    let stats = run_sig(&mut g, None);
+    let stats = run_sig(&mut g, None, false, &Default::default());
     assert_eq!(stats.sites_resolved, 1);
     // run, a, b, and the closure are all function values (run is the caller but
     // also a free fn value); all admitted under unknown arity.
@@ -223,7 +231,7 @@ fn methods_are_excluded_only_free_functions_and_closures_are_candidates() {
     );
     let facts = b.build();
     let mut g = link_facts(&facts);
-    run_sig(&mut g, None);
+    run_sig(&mut g, None, false, &Default::default());
 
     let dsts = sig_candidate_dsts(&g);
     assert!(dsts.contains(&node_id(&g, "m::free")), "free fn is a candidate");
@@ -263,7 +271,7 @@ fn supernode_cap_keeps_the_full_set_with_a_cut_marker() {
     );
     let facts = b.build();
     let mut g = link_facts(&facts);
-    let stats = run_sig(&mut g, None);
+    let stats = run_sig(&mut g, None, false, &Default::default());
 
     assert_eq!(stats.sites_resolved, 1);
     assert_eq!(stats.supernode_sites, 1, "the over-cap site is counted");
@@ -310,7 +318,7 @@ fn candidates_are_partitioned_by_source_language() {
     ];
     let mut g = link(&inputs, &LinkOpts::default());
 
-    let stats = run_sig(&mut g, None);
+    let stats = run_sig(&mut g, None, false, &Default::default());
     assert_eq!(stats.sites_resolved, 1);
 
     let dsts = sig_candidate_dsts(&g);
@@ -354,7 +362,7 @@ fn max_candidates_none_is_uncapped_by_default() {
     );
     let facts = b.build();
     let mut g = link_facts(&facts);
-    run_sig(&mut g, None);
+    run_sig(&mut g, None, false, &Default::default());
     assert_eq!(
         sig_candidate_dsts(&g).len(),
         n,
@@ -405,7 +413,7 @@ fn max_candidates_caps_the_signature_compatible_set_to_the_nearest() {
         FileInput::new("blob-b".to_string(), "src/b.rs", "rust", &b_facts),
     ];
     let mut g = link(&inputs, &LinkOpts::default());
-    let stats = run_sig(&mut g, Some(2));
+    let stats = run_sig(&mut g, Some(2), false, &Default::default());
 
     assert_eq!(stats.sites_resolved, 1);
     let kept = sig_candidate_dsts(&g);
@@ -430,9 +438,9 @@ fn re_running_the_signature_pass_is_byte_identical() {
     let facts = callback_with_arity_one_and_two();
 
     let mut g1 = link_facts(&facts);
-    run_sig(&mut g1, None);
+    run_sig(&mut g1, None, false, &Default::default());
     let mut g2 = link_facts(&facts);
-    run_sig(&mut g2, None);
+    run_sig(&mut g2, None, false, &Default::default());
 
     assert_eq!(g1.edges, g2.edges, "edges are byte-identical across runs");
     assert_eq!(
