@@ -120,7 +120,12 @@ pub struct SigStats {
 /// callback tables and async JS/TS `(err, data) => {}`-shaped handlers) is
 /// exactly the shape this caps: candidate count scales with corpus size, not
 /// with how many functions could plausibly flow to the call site.
-pub fn run_sig(graph: &mut ResolvedGraph, max_candidates: Option<u32>) -> SigStats {
+pub fn run_sig(
+    graph: &mut ResolvedGraph,
+    max_candidates: Option<u32>,
+    type_layer_disambiguation: bool,
+    field_init_index: &BTreeMap<String, BTreeSet<String>>,
+) -> SigStats {
     let mut stats = SigStats::default();
 
     let sites = collect_indirect_sites(graph);
@@ -175,6 +180,35 @@ pub fn run_sig(graph: &mut ResolvedGraph, max_candidates: Option<u32>) -> SigSta
             // honestly dangling (no edge) rather than inventing a target.
             stats.sites_unmatched += 1;
             continue;
+        }
+
+        // Prototype (2026-11-17), opt-in: single-layer MLTA/TypeDive-style
+        // narrowing of the signature-compatible set to candidates whose own
+        // file also has a `.field = <ident>` designated initializer for this
+        // call site's callee name — the real target this flag was built for
+        // (`obj->read(...)`-style ops-struct calls, `RefKind::CallCallback`,
+        // which reach *this* pass, unlike the bare-identifier Tier-0 fallback
+        // the first increment of this prototype narrowed). Never narrows to
+        // empty — same posture as the arity match above and as `link.rs`'s
+        // Tier-0 narrowing.
+        if type_layer_disambiguation {
+            if let Some(name) = &site.name {
+                if let Some(files) = field_init_index.get(name) {
+                    let filtered: Vec<NodeId> = dsts
+                        .iter()
+                        .copied()
+                        .filter(|d| {
+                            file_fqn_by_id
+                                .get(d)
+                                .map(|&(f, _)| files.contains(f))
+                                .unwrap_or(false)
+                        })
+                        .collect();
+                    if !filtered.is_empty() {
+                        dsts = filtered;
+                    }
+                }
+            }
         }
 
         let confidence = canonicalize_candidate_dsts(&mut dsts);
@@ -272,6 +306,11 @@ struct Replacement {
 struct IndirectSite {
     edge_index: usize,
     arity: Option<usize>,
+    /// Prototype (2026-11-17): the syntactic callee name stamped by `link.rs`'s
+    /// Step 0 (`indirect:<arity>:<name>`) — the struct field for `obj->read(...)`,
+    /// or the bound identifier for a bare fn-pointer/closure call. `None` for
+    /// `?` (no name segment recovered) or an older/unstamped rule string.
+    name: Option<String>,
 }
 
 /// Collect every indirect-call placeholder edge (`rule` starting `"indirect"`,
@@ -290,18 +329,33 @@ fn collect_indirect_sites(graph: &ResolvedGraph) -> Vec<IndirectSite> {
         let Some(site_id) = e.edge.site_id else {
             continue;
         };
+        let (arity, name) = parse_indirect_rule(&e.edge.rule);
         by_site.entry((e.edge.src, site_id)).or_insert(IndirectSite {
             edge_index: i,
-            arity: parse_arity(&e.edge.rule),
+            arity,
+            name,
         });
     }
     by_site.into_values().collect()
 }
 
-/// Parse the arity out of an `indirect:<arity>` rule string. `indirect:?` (and any
-/// unparseable tail) yields `None` (arity unknown → admit every candidate).
-fn parse_arity(rule: &str) -> Option<usize> {
-    rule.strip_prefix("indirect:")?.parse::<usize>().ok()
+/// Parse the arity and (prototype, 2026-11-17) callee name out of an
+/// `indirect:<arity>:<name>` rule string. Also accepts the pre-2026-11-17
+/// two-field `indirect:<arity>` shape (no name segment) for forward
+/// compatibility with any cached/stored graph built before this change.
+/// `indirect:?` (or an unparseable arity) yields `arity = None`; a name of
+/// `?` (or a missing name segment) yields `name = None`.
+fn parse_indirect_rule(rule: &str) -> (Option<usize>, Option<String>) {
+    let Some(rest) = rule.strip_prefix("indirect:") else {
+        return (None, None);
+    };
+    let mut parts = rest.splitn(2, ':');
+    let arity = parts.next().and_then(|a| a.parse::<usize>().ok());
+    let name = parts
+        .next()
+        .filter(|n| *n != "?")
+        .map(|n| n.to_owned());
+    (arity, name)
 }
 
 /// Build the signature-compatible candidate edge from the placeholder prototype,

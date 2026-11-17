@@ -120,7 +120,7 @@ pub fn index_path(
         .workdir()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| repo_path.as_ref().to_path_buf());
-    let (mut graph, mut stats) = pipeline::extract_and_link(&sources, registry, store, opts)?;
+    let (mut graph, mut stats, field_init_index) = pipeline::extract_and_link(&sources, registry, store, opts)?;
     // Back-fill the unsupported count with blobs the filter skipped entirely.
     // `blobs_indexed + blobs_unsupported` = blobs we loaded; anything beyond
     // that total was filtered before content load and should count as unsupported.
@@ -129,7 +129,7 @@ pub fn index_path(
     pipeline::apply_scip(&mut graph, &mut stats, &sources, &source_root, opts)?;
     pipeline::apply_cha(&mut graph, &mut stats, opts.max_supernode_candidates);
     pipeline::apply_rta(&mut graph, &mut stats);
-    pipeline::apply_sig(&mut graph, &mut stats, opts.max_supernode_candidates);
+    pipeline::apply_sig(&mut graph, &mut stats, opts.max_supernode_candidates, opts.type_layer_disambiguation, &field_init_index);
     pipeline::apply_effects(&mut graph, &mut stats);
     pipeline::store_graph(store, &tree_oid, None, graph)?;
     Ok(IndexOutcome {
@@ -162,12 +162,12 @@ pub fn index_workdir(
             || manifest::is_pipeline_manifest(path)
     }))?;
     let key = workdir_key(&sources);
-    let (mut graph, mut stats) = pipeline::extract_and_link(&sources, registry, store, opts)?;
+    let (mut graph, mut stats, field_init_index) = pipeline::extract_and_link(&sources, registry, store, opts)?;
     // Workdir rel-paths are relative to the walked directory; anchor there.
     pipeline::apply_scip(&mut graph, &mut stats, &sources, dir, opts)?;
     pipeline::apply_cha(&mut graph, &mut stats, opts.max_supernode_candidates);
     pipeline::apply_rta(&mut graph, &mut stats);
-    pipeline::apply_sig(&mut graph, &mut stats, opts.max_supernode_candidates);
+    pipeline::apply_sig(&mut graph, &mut stats, opts.max_supernode_candidates, opts.type_layer_disambiguation, &field_init_index);
     pipeline::apply_effects(&mut graph, &mut stats);
     pipeline::store_graph(store, &key, None, graph)?;
     Ok(IndexOutcome {

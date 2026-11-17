@@ -29,6 +29,32 @@ use crate::symtab::{
 /// of `(blob, path, lang, facts)` tuples, regardless of the order they are
 /// supplied (WP-06 convergence criterion). See the crate docs for the full
 /// tier → confidence mapping.
+/// Owned `field_name -> {files that wire up that field via a `.field = <ident>`
+/// designated initializer}` index, built from the same [`FieldInitFact`]s
+/// [`link`] uses internally for its own (borrowed) Tier-0 narrowing — see that
+/// function's `field_init_files` local. A separate, owned entry point because
+/// callers that need the index to outlive one `link()` call (e.g. threading it
+/// into the later `sig::run_sig` post-pass, which runs after `link()` has
+/// already returned and `inputs` has gone out of scope) can't borrow from
+/// `inputs` the way `link()` itself does.
+///
+/// Prototype (2026-11-17), part of `LinkOpts::type_layer_disambiguation`.
+pub fn collect_field_init_index(
+    inputs: &[FileInput<'_>],
+) -> std::collections::BTreeMap<String, std::collections::BTreeSet<String>> {
+    let mut index: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> =
+        std::collections::BTreeMap::new();
+    for f in inputs {
+        for fi in &f.facts.field_inits {
+            index
+                .entry(fi.field_name.clone())
+                .or_default()
+                .insert(f.path.clone());
+        }
+    }
+    index
+}
+
 pub fn link(inputs: &[FileInput<'_>], opts: &LinkOpts) -> ResolvedGraph {
     // --- Pass 0: materialize nodes and assign dense ids by canonical sort. ---
     let (mut nodes, def_to_node) = build_nodes(inputs);
@@ -705,7 +731,14 @@ fn resolve_ref(
         // (`indirect:<arity>`) — `EdgeBuild::rule` is `&'static`, so the dynamic
         // arity tag is written after the push. Read back by `crate::sig`.
         if let Some(e) = edges.last_mut() {
-            let r = format!("indirect:{arity_tag}");
+            // Prototype (2026-11-17): also stamp the syntactic callee name
+            // (the struct field for `obj->read(...)`, or the bound identifier
+            // for a bare fn-pointer/closure call) so `crate::sig::run_sig` can
+            // optionally narrow by it via `LinkOpts::type_layer_disambiguation`.
+            // `?` when no name segment exists (e.g. `(*fp)()` with no inner
+            // identifier recovered).
+            let name_tag = raw.name_path.last().map(|s| s.as_str()).unwrap_or("?");
+            let r = format!("indirect:{arity_tag}:{name_tag}");
             e.edge.rule = r.clone();
             e.provenance.rule = r;
         }

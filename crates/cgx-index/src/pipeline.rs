@@ -167,7 +167,11 @@ pub(crate) fn extract_and_link<S: FactStore>(
     registry: &FrontendRegistry,
     store: &mut S,
     opts: &IndexOpts,
-) -> Result<(ResolvedGraph, IndexStats)> {
+) -> Result<(
+    ResolvedGraph,
+    IndexStats,
+    std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+)> {
     let mut stats = IndexStats::default();
 
     // Resolve each file's owning package from the Cargo manifests in the source
@@ -209,10 +213,17 @@ pub(crate) fn extract_and_link<S: FactStore>(
     // narrowing across the whole corpus). Those two flags are off by default
     // and unused by the WS2003 corpus; the in-memory path below is their
     // (unchanged) fallback.
-    let graph = if link_opts.dataflow || link_opts.receiver_narrowing {
+    let (graph, field_init_index) = if link_opts.dataflow || link_opts.receiver_narrowing {
         extract_and_link_in_memory(sources, registry, store, &pkg_map, &manifest_map, &link_opts, &mut stats)?
     } else {
-        extract_and_link_streaming(sources, registry, store, &pkg_map, &manifest_map, &link_opts, &mut stats)?
+        // Prototype (2026-11-17): the streaming path doesn't build full
+        // `FileFacts`-backed `FileInput`s (that's the whole peak-RSS point of
+        // this path), so `FieldInitFact` isn't available here yet — empty
+        // index, same as PR #3's declared "not wired into build_global_index"
+        // gap. `type_layer_disambiguation` is a no-op on this path until that's
+        // built.
+        let graph = extract_and_link_streaming(sources, registry, store, &pkg_map, &manifest_map, &link_opts, &mut stats)?;
+        (graph, std::collections::BTreeMap::new())
     };
     stats.precision = graph.precision;
     stats.nodes = graph.nodes.len();
@@ -240,7 +251,7 @@ pub(crate) fn extract_and_link<S: FactStore>(
         stats.ifds = df.ifds_stats;
     }
 
-    Ok((graph, stats))
+    Ok((graph, stats, field_init_index))
 }
 
 /// The original extract → cache → link path: every file's `FileFacts` (cache
@@ -260,7 +271,7 @@ fn extract_and_link_in_memory<S: FactStore>(
     manifest_map: &ManifestMap,
     link_opts: &LinkOpts,
     stats: &mut IndexStats,
-) -> Result<ResolvedGraph> {
+) -> Result<(ResolvedGraph, std::collections::BTreeMap<String, std::collections::BTreeSet<String>>)> {
     use rayon::prelude::*;
 
     let mut prepared: Vec<PreparedFile> = Vec::new();
@@ -352,7 +363,11 @@ fn extract_and_link_in_memory<S: FactStore>(
             )
         })
         .collect();
-    Ok(link(&inputs, link_opts))
+    // Prototype (2026-11-17): owned field-init index, computed here (not inside
+    // `link()`) because it needs to outlive this function's `inputs` borrow —
+    // `sig::run_sig` consumes it after `extract_and_link` has already returned.
+    let field_init_index = cgx_resolve::collect_field_init_index(&inputs);
+    Ok((link(&inputs, link_opts), field_init_index))
 }
 
 /// The streaming extract → cache → link path (peak-RSS fix): Pass 0 builds the
@@ -597,8 +612,15 @@ pub(crate) fn apply_sig(
     graph: &mut ResolvedGraph,
     stats: &mut IndexStats,
     max_supernode_candidates: Option<u32>,
+    type_layer_disambiguation: bool,
+    field_init_index: &std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
 ) {
-    stats.sig = run_sig(graph, max_supernode_candidates);
+    stats.sig = run_sig(
+        graph,
+        max_supernode_candidates,
+        type_layer_disambiguation,
+        field_init_index,
+    );
     stats.edges = graph.edges.len();
     stats.nodes = graph.nodes.len();
 }
