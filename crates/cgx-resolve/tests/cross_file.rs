@@ -772,6 +772,123 @@ fn type_layer_disambiguation_prototype_narrows_bare_call_by_file_field_init() {
     );
 }
 
+/// Same scenario as `type_layer_disambiguation_prototype_narrows_bare_call_by_file_field_init`,
+/// but through the streaming/chunked large-corpus path
+/// (`build_global_index`/`LinkSession`/`FileSummary`) rather than `link()`'s
+/// full-`FileFacts`-at-once path — the gap closed 2026-11-17 (`FileSummary`
+/// now carries `field_inits`; `collect_field_init_index_from_summaries` builds
+/// the same narrowing index `LinkSession` threads through). Before this fix,
+/// `--type-layer-disambiguation` was a documented no-op on this path.
+#[test]
+fn type_layer_disambiguation_streaming_path_narrows_bare_call_by_file_field_init() {
+    let mut a = FileBuilder::new();
+    a.def(
+        "driver_a::read",
+        SymbolKind::Function,
+        ScopeId::ROOT,
+        1,
+        PUB,
+        false,
+        Some(3),
+    );
+    let mut a = a.build();
+    a.field_inits.push(cgx_frontend::facts::FieldInitFact {
+        field_name: "read".to_string(),
+        function_name: "read".to_string(),
+        span: cgx_core::provenance::Span::new("src/driver_a.c".to_string(), 10, Some(1)),
+    });
+
+    let mut b = FileBuilder::new();
+    b.def(
+        "driver_b::read",
+        SymbolKind::Function,
+        ScopeId::ROOT,
+        1,
+        PUB,
+        false,
+        Some(3),
+    );
+    let b = b.build();
+
+    let mut caller_file = FileBuilder::new();
+    let run = caller_file.scope(ScopeId::ROOT, Some("caller::run"));
+    caller_file.def(
+        "caller::run",
+        SymbolKind::Function,
+        ScopeId::ROOT,
+        1,
+        PUB,
+        false,
+        Some(0),
+    );
+    caller_file.raw_ref(
+        &["read"],
+        run,
+        2,
+        RefKind::Call,
+        EdgeCondition::Always,
+        Some(3),
+    );
+    let c = caller_file.build();
+
+    let summaries = vec![
+        cgx_resolve::FileSummary::from_facts("blob-a", "src/driver_a.c", "c", &a),
+        cgx_resolve::FileSummary::from_facts("blob-b", "src/driver_b.c", "c", &b),
+        cgx_resolve::FileSummary::from_facts("blob-c", "src/caller.c", "c", &c),
+    ];
+
+    let run_streaming = |opts: LinkOpts| {
+        let (nodes, def_to_node, table) = cgx_resolve::build_global_index(&summaries);
+        let field_init_files = opts
+            .type_layer_disambiguation
+            .then(|| cgx_resolve::collect_field_init_index_from_summaries(&summaries));
+        let mut session =
+            cgx_resolve::LinkSession::new_with_field_inits(&table, &def_to_node, opts, field_init_files);
+        let facts_by_path = [("src/driver_a.c", &a), ("src/driver_b.c", &b), ("src/caller.c", &c)];
+        for (idx, (summary, _)) in summaries.iter().zip(facts_by_path.iter()).enumerate() {
+            let facts = facts_by_path
+                .iter()
+                .find(|(p, _)| *p == summary.path)
+                .unwrap()
+                .1;
+            let file = input(&summary.path, &summary.lang, facts);
+            session.resolve_file(&file, idx);
+        }
+        session.finish(nodes)
+    };
+
+    let off = run_streaming(LinkOpts::default());
+    let fqn_of_off: std::collections::BTreeMap<_, _> =
+        off.node_records().map(|n| (n.id, n.fqn.clone())).collect();
+    let kept_off: std::collections::BTreeSet<&str> = off
+        .edge_records()
+        .filter(|e| e.rule.starts_with("name-arity"))
+        .map(|e| fqn_of_off.get(&e.dst).map(String::as_str).unwrap())
+        .collect();
+    assert_eq!(
+        kept_off,
+        std::collections::BTreeSet::from(["driver_a::read", "driver_b::read"]),
+        "flag off on the streaming path must reproduce today's uncapped Tier-0 behavior exactly"
+    );
+
+    let on = run_streaming(LinkOpts {
+        type_layer_disambiguation: true,
+        ..LinkOpts::default()
+    });
+    let fqn_of_on: std::collections::BTreeMap<_, _> =
+        on.node_records().map(|n| (n.id, n.fqn.clone())).collect();
+    let kept_on: std::collections::BTreeSet<&str> = on
+        .edge_records()
+        .filter(|e| e.rule.starts_with("name-arity"))
+        .map(|e| fqn_of_on.get(&e.dst).map(String::as_str).unwrap())
+        .collect();
+    assert_eq!(
+        kept_on,
+        std::collections::BTreeSet::from(["driver_a::read"]),
+        "flag on must narrow the STREAMING path the same way link() already narrows the in-memory path"
+    );
+}
+
 /// The actual motivating case (2026-11-17 increment): a C struct function-pointer
 /// member call (`obj->read(...)`, `RefKind::CallCallback`), not the bare-identifier
 /// `RefKind::Call` the prior increment covered. This reaches `sig::run_sig`, not

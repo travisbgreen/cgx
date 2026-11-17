@@ -33,9 +33,9 @@ use crate::git::SourceFile;
 use cgx_core::codec::{decode, encode};
 use cgx_frontend::{FileCtx, FileFacts, FrontendRegistry, RelPath};
 use cgx_resolve::{
-    build_global_index, link, propagate_dirty, run_cha, run_effect_closure, run_rta, run_sig,
-    ChaStats, DataflowStats, EffectStats, FileInput, FileSummary, IfdsDataflowStats, LinkOpts,
-    LinkSession, ResolvedGraph, RtaStats, SigStats,
+    build_global_index, collect_field_init_index_from_summaries, link, propagate_dirty, run_cha,
+    run_effect_closure, run_rta, run_sig, ChaStats, DataflowStats, EffectStats, FileInput,
+    FileSummary, IfdsDataflowStats, LinkOpts, LinkSession, ResolvedGraph, RtaStats, SigStats,
 };
 use cgx_scip::ScipResolver;
 use cgx_store::{FactStore, FragmentInput, FragmentKey, LinkedGraph, TreeOid};
@@ -216,14 +216,14 @@ pub(crate) fn extract_and_link<S: FactStore>(
     let (graph, field_init_index) = if link_opts.dataflow || link_opts.receiver_narrowing {
         extract_and_link_in_memory(sources, registry, store, &pkg_map, &manifest_map, &link_opts, &mut stats)?
     } else {
-        // Prototype (2026-11-17): the streaming path doesn't build full
-        // `FileFacts`-backed `FileInput`s (that's the whole peak-RSS point of
-        // this path), so `FieldInitFact` isn't available here yet — empty
-        // index, same as PR #3's declared "not wired into build_global_index"
-        // gap. `type_layer_disambiguation` is a no-op on this path until that's
-        // built.
-        let graph = extract_and_link_streaming(sources, registry, store, &pkg_map, &manifest_map, &link_opts, &mut stats)?;
-        (graph, std::collections::BTreeMap::new())
+        // Fixed 2026-11-17 (was the declared "not wired into
+        // build_global_index" gap): the streaming path's own `field_init_index`
+        // return is built inside `extract_and_link_streaming` from the corpus's
+        // `FileSummary`s (which now carry `field_inits`) — threaded here so
+        // `apply_sig`'s post-pass gets real data on this path too, not the
+        // empty placeholder this branch returned before.
+        let (graph, field_init_index) = extract_and_link_streaming(sources, registry, store, &pkg_map, &manifest_map, &link_opts, &mut stats)?;
+        (graph, field_init_index)
     };
     stats.precision = graph.precision;
     stats.nodes = graph.nodes.len();
@@ -391,7 +391,10 @@ fn extract_and_link_streaming<S: FactStore>(
     manifest_map: &ManifestMap,
     link_opts: &LinkOpts,
     stats: &mut IndexStats,
-) -> Result<ResolvedGraph> {
+) -> Result<(
+    ResolvedGraph,
+    std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+)> {
     use rayon::prelude::*;
 
     // Pass 1 (sequential, cheap SQLite reads): partition into cache hits
@@ -494,10 +497,34 @@ fn extract_and_link_streaming<S: FactStore>(
     // Pass 0: the global node set + symbol table, from summaries alone.
     let (nodes, def_to_node, table) = build_global_index(&summaries);
 
+    // 2026-11-17: field-init index for `--type-layer-disambiguation`, built
+    // once from the same summaries, same cost-when-off posture as the flag
+    // has everywhere else — `None` (not an empty set) when the flag is off,
+    // so turning it off doesn't even pay for the (cheap, but non-zero) index
+    // build. See `collect_field_init_index_from_summaries`'s doc comment for
+    // why this can't reuse `link()`'s own `FileInput`-based local.
+    let field_init_files = link_opts
+        .type_layer_disambiguation
+        .then(|| collect_field_init_index_from_summaries(&summaries));
+    // Owned variant for `apply_sig`'s post-pass (runs after this function
+    // returns and `summaries` has gone out of scope) — same cost-when-off
+    // posture: an empty map when the flag is off, not a real index built for
+    // nothing.
+    let field_init_index = if link_opts.type_layer_disambiguation {
+        cgx_resolve::collect_field_init_owned_index_from_summaries(&summaries)
+    } else {
+        std::collections::BTreeMap::new()
+    };
+
     // Pass A/B: resolve one file's full facts at a time, re-read from the
     // Layer-1 store by the fragment key Pass 1/2 just wrote or read — the same
     // row, so this is a cache hit with no re-extraction.
-    let mut session = LinkSession::new(&table, &def_to_node, link_opts.clone());
+    let mut session = LinkSession::new_with_field_inits(
+        &table,
+        &def_to_node,
+        link_opts.clone(),
+        field_init_files,
+    );
     for (file_idx, (summary, key)) in summaries.iter().zip(keys.iter()).enumerate() {
         let cached = store.fragment(key)?.ok_or_else(|| {
             IndexError::Local(format!(
@@ -516,7 +543,7 @@ fn extract_and_link_streaming<S: FactStore>(
         // `facts` drops at the end of this iteration — never more than one
         // file's full facts alive at once.
     }
-    Ok(session.finish(nodes))
+    Ok((session.finish(nodes), field_init_index))
 }
 
 /// Apply the SCIP upgrade-only re-label pass (design §3.5) to `graph` in place
