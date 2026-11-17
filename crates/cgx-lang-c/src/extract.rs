@@ -36,8 +36,8 @@ use cgx_core::cut::CutMarker;
 use cgx_core::node::{EntrypointKind, SymbolKind, Visibility};
 use cgx_core::provenance::Span;
 use cgx_frontend::{
-    CutHint, EffectFact, EntrypointHint, FileCtx, FileFacts, FrontendError, ImportFact,
-    ImportedName, Lang, LanguageFrontend, RawRef, RefKind, RelPath, ScopeId, SymbolDef,
+    CutHint, EffectFact, EntrypointHint, FieldInitFact, FileCtx, FileFacts, FrontendError,
+    ImportFact, ImportedName, Lang, LanguageFrontend, RawRef, RefKind, RelPath, ScopeId, SymbolDef,
 };
 use smallvec::SmallVec;
 use std::collections::{BTreeMap, BTreeSet};
@@ -61,7 +61,10 @@ impl CFrontend {
 
 /// Version of the C extraction rules; bumping invalidates cached fragments.
 /// v2: `FileFacts` gained `module` and `type_facts`; v1 fragments no longer decode.
-const C_FRAGMENT_VERSION: u32 = 2;
+/// v3: `FileFacts` gained `field_inits` (`FieldInitFact`, prototype 2026-11-17);
+/// v2 fragments no longer decode (postcard is not self-describing — a trailing
+/// field addition hits end-of-buffer on old cached bytes, not a silent default).
+const C_FRAGMENT_VERSION: u32 = 3;
 
 impl LanguageFrontend for CFrontend {
     fn lang(&self) -> Lang {
@@ -266,6 +269,10 @@ impl<'a> Builder<'a> {
                 self.walk_loop(node, ctx, stmt_index)
             }
             "switch_statement" => self.walk_switch(node, ctx, stmt_index),
+            "initializer_pair" => {
+                self.walk_initializer_pair(node);
+                self.walk_children(node, ctx, stmt_index);
+            }
             _ => self.walk_children(node, ctx, stmt_index),
         }
     }
@@ -517,6 +524,43 @@ impl<'a> Builder<'a> {
             }
         }
         self.walk_children(node, ctx, stmt_index);
+    }
+
+    /// Prototype (2026-11-17): `.field = identifier` inside a struct/union
+    /// literal — emits a [`FieldInitFact`] linking the designator's field
+    /// name to the assigned identifier, when the value is a bare identifier
+    /// (`.read = my_read`). Anything else as the value (`&my_read`, a cast, a
+    /// ternary, an initializer list) is intentionally left unmodeled rather
+    /// than guessed at — see the `FieldInitFact` doc comment for why this is
+    /// field-name-keyed only, not struct-type-qualified.
+    ///
+    /// tree-sitter-c's `initializer_pair` node carries the designator(s) as a
+    /// `designator` field (repeatable — `.a.b = x` nests two) and the RHS as
+    /// a `value` field. Only a single, direct `field_designator` is handled
+    /// (the common ops-struct case); nested/array designators are skipped.
+    fn walk_initializer_pair(&mut self, node: Node<'_>) {
+        let Some(designator) = node.child_by_field_name("designator") else {
+            return;
+        };
+        if designator.kind() != "field_designator" {
+            return;
+        }
+        let Some(field_ident) = designator.named_child(0) else {
+            return;
+        };
+        let field_name = self.text(field_ident);
+        let Some(value) = node.child_by_field_name("value") else {
+            return;
+        };
+        if value.kind() != "identifier" {
+            return;
+        }
+        let function_name = self.text(value);
+        self.facts.field_inits.push(FieldInitFact {
+            field_name,
+            function_name,
+            span: self.span(node),
+        });
     }
 
     /// Classify a call's `function` operand into `(name_path, RefKind)`:

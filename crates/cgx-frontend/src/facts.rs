@@ -370,6 +370,28 @@ pub struct CutHint {
     pub macro_origin: Option<String>,
 }
 
+/// A designated-initializer binding: `.field_name = function_name` inside a
+/// struct/union literal (prototype, 2026-11-17 — single-layer MLTA/TypeDive-
+/// style disambiguation, see docs/questions or PR description for the paper
+/// reference). Field-name-keyed only, not struct-type-qualified — this is a
+/// coarser signal than full MLTA (two unrelated structs sharing a field name
+/// are not distinguished), but strictly sharper than Tier-0's raw name+arity
+/// fallback for the common ops-struct pattern (`file_operations`-style).
+/// Full struct-type qualification is the natural next increment, not yet
+/// built — would need the designator's enclosing type resolved, which this
+/// pass does not attempt.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct FieldInitFact {
+    /// The designator name, e.g. `"read"` in `.read = my_read`.
+    pub field_name: String,
+    /// The bare identifier assigned — only captured when the initializer is a
+    /// plain function-name reference (`.read = my_read`), not an arbitrary
+    /// expression (`.read = &my_read`, a cast, a ternary, ...). Those stay
+    /// unmodeled rather than guessed at.
+    pub function_name: String,
+    pub span: Span,
+}
+
 /// A receiver-typing fact: the syntactic input the resolver uses to infer which
 /// classes a method-call receiver can hold. Frontends normalize language syntax
 /// into the structured [`TypeExpr`] / [`ValueSource`] payloads, so the resolver
@@ -724,6 +746,10 @@ pub struct FileFacts {
     pub entrypoint_hints: Vec<EntrypointHint>,
     /// Cut hints (GM-5.3 / ADR-07).
     pub cut_hints: Vec<CutHint>,
+    /// Designated-initializer field bindings (prototype, 2026-11-17 — see
+    /// [`FieldInitFact`]). Empty for frontends that don't emit it.
+    #[serde(default)]
+    pub field_inits: Vec<FieldInitFact>,
     /// Syntactic own-effect facts (GM-12 Phase 1), one per symbol with any
     /// detected effect.
     pub effects: Vec<EffectFact>,
@@ -766,6 +792,7 @@ impl FileFacts {
         self.exports.sort();
         self.entrypoint_hints.sort();
         self.cut_hints.sort();
+        self.field_inits.sort();
         self.effects.sort();
         self.data_flows.sort();
         self.type_facts.sort();

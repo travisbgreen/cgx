@@ -39,6 +39,32 @@ pub fn link(inputs: &[FileInput<'_>], opts: &LinkOpts) -> ResolvedGraph {
             .collect();
     let table = SymbolTable::build(&node_records(&nodes), &files);
 
+    // Prototype (2026-11-17): `(field_name, file)` pairs where that file contains
+    // at least one `.field_name = <ident>` designated initializer — see
+    // `LinkOpts::type_layer_disambiguation`. File-scoped rather than per-def
+    // because the common idiom this targets is a `static` per-file helper named
+    // identically to the field it's wired into (`static int read(...)` + later
+    // in the same file `.read = read`): matching by *name* alone against that
+    // idiom is tautological (every def named "read" trivially matches a
+    // `.read = read` fact), so the real signal is "does this candidate's own
+    // file actually wire up this field anywhere" — a file-locality narrowing,
+    // not full per-definition linkage (resolving the initializer's identifier
+    // to one specific def is the natural next increment, not yet built).
+    //
+    // NOT wired into `build_global_index`/the streaming-chunked link path
+    // (below in this file) — out of scope for this prototype pass; that path
+    // works from declaration-level `FileSummary`s, not full `FileFacts`, so it
+    // needs its own, separate integration.
+    let field_init_files: std::collections::BTreeSet<(&str, &str)> = inputs
+        .iter()
+        .flat_map(|f| {
+            f.facts
+                .field_inits
+                .iter()
+                .map(move |fi| (fi.field_name.as_str(), f.path.as_str()))
+        })
+        .collect();
+
     // --- Pass A/B: resolve every reference. ---
     let mut edges: ChunkedVec<EdgeWithProvenance> = ChunkedVec::new();
     let mut candidates: Vec<Candidate> = Vec::new();
@@ -78,6 +104,7 @@ pub fn link(inputs: &[FileInput<'_>], opts: &LinkOpts) -> ResolvedGraph {
                 &mut next_group,
                 receivers.as_ref(),
                 &mut ledger,
+                Some(&field_init_files),
             );
         }
     }
@@ -379,6 +406,7 @@ fn resolve_file_into(
             next_group,
             None,
             ledger,
+            None, // streaming/chunked path — not wired, see `link()`'s comment
         );
     }
     for rel in &facts.impl_relations {
@@ -595,6 +623,7 @@ fn resolve_ref(
     next_group: &mut u32,
     receivers: Option<&ReceiverIndex<'_>>,
     ledger: &mut Ledger,
+    field_init_files: Option<&std::collections::BTreeSet<(&str, &str)>>,
 ) {
     let span = Span::new(file.path.clone(), raw.span.line, raw.span.col);
     let last = match raw.name_path.last() {
@@ -849,6 +878,40 @@ fn resolve_ref(
                     .iter()
                     .copied()
                     .filter(|d| d.arity.is_none_or(|a| a == arity))
+                    .collect();
+                if !filtered.is_empty() {
+                    hits = filtered;
+                }
+            }
+        }
+        // Prototype (2026-11-17), opt-in: single-layer MLTA/TypeDive-style
+        // narrowing of the Tier-0 global name(+arity) fallback. Keep only
+        // candidates whose own file also has a `.field = <ident>` designated
+        // initializer for this exact name somewhere — never narrows to empty
+        // (falls back to the full Tier-0 set if no candidate's file
+        // qualifies, same posture as the arity filter above). See
+        // `LinkOpts::type_layer_disambiguation` doc comment for why this is
+        // file-scoped rather than per-definition.
+        //
+        // IMPORTANT, CONFIRMED GAP (2026-11-17): the real-world motivating
+        // case — a C struct function-pointer member call (`obj->read(...)`,
+        // `RefKind::CallCallback`) — does NOT reach this function at all.
+        // Step 0 above intercepts every `CallCallback`/`CallClosure`/
+        // `CallPinnedClosure` site unconditionally into an "indirect"
+        // placeholder, resolved later by `sig::run_sig`'s signature-
+        // compatible matching (arity-only, not name-based) — a different
+        // pass entirely, operating on the built graph, not raw `FileFacts`.
+        // This Tier-0 hook therefore only narrows *bare-identifier*
+        // (`RefKind::Call`) same-name collisions, not field-pointer calls.
+        // Wiring `field_init_files`-equivalent narrowing into `run_sig` is
+        // the real next step for the Linux ops-struct case and is NOT done
+        // here — see the PR description / pkm-qp2y for this gap.
+        if opts.type_layer_disambiguation {
+            if let Some(index) = field_init_files {
+                let filtered: Vec<&DefEntry> = hits
+                    .iter()
+                    .copied()
+                    .filter(|d| index.contains(&(last, d.file.as_str())))
                     .collect();
                 if !filtered.is_empty() {
                     hits = filtered;

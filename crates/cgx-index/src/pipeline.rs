@@ -86,6 +86,13 @@ pub struct IndexOpts {
     /// targets. See `cgx_resolve::run_cha`/`run_sig` for why this must stay
     /// opt-in rather than become a default.
     pub max_supernode_candidates: Option<u32>,
+    /// Prototype (2026-11-17), opt-in, off by default (`cgx index
+    /// --type-layer-disambiguation`): single-layer MLTA/TypeDive-style
+    /// narrowing of the Tier-0 fallback for C struct function-pointer member
+    /// calls. See `cgx_resolve::LinkOpts::type_layer_disambiguation`. NOT
+    /// wired into the streaming/chunked large-corpus path — only takes
+    /// effect when the standard (non-streaming) link path runs.
+    pub type_layer_disambiguation: bool,
 }
 
 /// Counters describing what an index run did. The incremental win is observable
@@ -191,6 +198,7 @@ pub(crate) fn extract_and_link<S: FactStore>(
         receiver_narrowing: opts.receiver_narrowing,
         narrowing_trace: opts.narrowing_trace,
         max_name_arity_candidates: opts.max_name_arity_candidates,
+        type_layer_disambiguation: opts.type_layer_disambiguation,
         ..LinkOpts::default()
     };
 

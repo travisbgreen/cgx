@@ -146,6 +146,24 @@ pub struct LinkOpts {
     /// Print one stderr line per narrowed, dangled or fallen-back virtual site
     /// (diagnostics). Ignored unless `receiver_narrowing` is on.
     pub narrowing_trace: bool,
+    /// Prototype (2026-11-17), opt-in, off by default: narrows the Tier-0
+    /// global name(+arity) fallback's candidate set to only defs whose own
+    /// file also has a matching [`cgx_frontend::FieldInitFact`] (`.field =
+    /// fn` designated-initializer binding) for the call's name, when any
+    /// exist in the corpus. Falls back to the unnarrowed Tier-0 set
+    /// otherwise (never narrows to empty). Single-layer / file-scoped only
+    /// — see `FieldInitFact`'s doc comment for why this isn't full
+    /// MLTA/TypeDive struct-type-qualified matching yet.
+    ///
+    /// Motivated by Linux-kernel-shaped ops-struct call sites
+    /// (`file_operations`-style, `obj->read(...)`) — **but those are
+    /// `RefKind::CallCallback` sites, which Step 0 of `resolve_ref`
+    /// intercepts into an `sig::run_sig`-resolved placeholder before ever
+    /// reaching this fallback.** This flag currently only narrows
+    /// bare-identifier (`RefKind::Call`) same-name collisions. Wiring the
+    /// same field-init signal into `run_sig` is the real next step for the
+    /// motivating case and is not done by this flag.
+    pub type_layer_disambiguation: bool,
 }
 
 impl Default for LinkOpts {
@@ -159,6 +177,7 @@ impl Default for LinkOpts {
             max_summary_edges: None,
             receiver_narrowing: false,
             narrowing_trace: false,
+            type_layer_disambiguation: false,
         }
     }
 }

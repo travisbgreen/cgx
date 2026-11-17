@@ -164,6 +164,15 @@ enum Command {
         /// opt in only for a corpus that needs it.
         #[arg(long = "max-name-arity-candidates", value_name = "N")]
         max_name_arity_candidates: Option<u32>,
+        /// Prototype (2026-11-17), opt-in: single-layer MLTA/TypeDive-style
+        /// narrowing of the Tier-0 fallback for C struct function-pointer
+        /// member calls (`obj->field(...)`) — keeps only same-name
+        /// candidates whose own file also designated-initializes that field
+        /// somewhere. Off by default; has no effect on corpora with no C
+        /// designated initializers. NOT wired into the streaming/chunked
+        /// large-corpus path yet.
+        #[arg(long = "type-layer-disambiguation")]
+        type_layer_disambiguation: bool,
         /// Cap CHA's trait-scoped and SIG's signature-compatible candidate-set
         /// size at index time. Both passes already flag an over-64 group as a
         /// cut-marked "supernode"; that flag never limited the edge count —
@@ -842,6 +851,7 @@ fn run(command: Command) -> Result<(), CliError> {
             receiver_narrowing,
             max_name_arity_candidates,
             max_supernode_candidates,
+            type_layer_disambiguation,
         } => run_index(
             path,
             scip,
@@ -851,6 +861,7 @@ fn run(command: Command) -> Result<(), CliError> {
             receiver_narrowing,
             max_name_arity_candidates,
             max_supernode_candidates,
+            type_layer_disambiguation,
         ),
         Command::Callers { symbol, query } => run_neighbors(&symbol, query, NeighborDir::Callers),
         Command::Callees { symbol, query } => run_neighbors(&symbol, query, NeighborDir::Callees),
@@ -997,6 +1008,7 @@ fn run_index(
     receiver_narrowing: bool,
     max_name_arity_candidates: Option<u32>,
     max_supernode_candidates: Option<u32>,
+    type_layer_disambiguation: bool,
 ) -> Result<(), CliError> {
     let repo_root = resolve_repo(path)?;
     // v0.3 SC6: dataflow is ON by default. The CLI flag `--no-dataflow` and the
@@ -1017,6 +1029,7 @@ fn run_index(
             narrowing_trace: env_on("CGX_PRECISION_TRACE"),
             max_name_arity_candidates,
             max_supernode_candidates,
+            type_layer_disambiguation,
         },
     )?;
 
