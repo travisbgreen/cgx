@@ -5,6 +5,9 @@
 # cgx-generated index store (build artifact, never committed)
 .cgx/
 
+# one-off validation-run output against large/external corpora (see bench/README.md)
+/bench/validation-runs/
+
 # Editor / OS noise
 .DS_Store
 .idea/
