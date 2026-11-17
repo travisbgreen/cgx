@@ -889,6 +889,141 @@ fn type_layer_disambiguation_streaming_path_narrows_bare_call_by_file_field_init
     );
 }
 
+/// Streaming-path counterpart to
+/// `type_layer_disambiguation_prototype_narrows_callcallback_by_file_field_init`
+/// below — the `sig::run_sig`/`CallCallback` half of the streaming-path fix
+/// (2026-11-17), which PR #4 shipped but did not separately verify end-to-end
+/// (flagged honestly in that PR as "high confidence by construction, not
+/// separately unit-tested"). Closes that gap.
+#[test]
+fn type_layer_disambiguation_streaming_path_narrows_callcallback_by_file_field_init() {
+    let mut a = FileBuilder::new();
+    a.def(
+        "driver_a::read",
+        SymbolKind::Function,
+        ScopeId::ROOT,
+        1,
+        PUB,
+        false,
+        Some(3),
+    );
+    let mut a = a.build();
+    a.field_inits.push(cgx_frontend::facts::FieldInitFact {
+        field_name: "read".to_string(),
+        function_name: "read".to_string(),
+        span: cgx_core::provenance::Span::new("src/driver_a.c".to_string(), 10, Some(1)),
+    });
+
+    let mut b = FileBuilder::new();
+    b.def(
+        "driver_b::read",
+        SymbolKind::Function,
+        ScopeId::ROOT,
+        1,
+        PUB,
+        false,
+        Some(3),
+    );
+    let b = b.build();
+    // driver_b.c has NO field_inits entry for "read" at all.
+
+    let mut caller_file = FileBuilder::new();
+    let run = caller_file.scope(ScopeId::ROOT, Some("caller::run"));
+    caller_file.def(
+        "caller::run",
+        SymbolKind::Function,
+        ScopeId::ROOT,
+        1,
+        PUB,
+        false,
+        Some(0),
+    );
+    // `obj->read(a, b, c)` — a struct field-pointer call, arity 3, matching
+    // both driver_a::read and driver_b::read's signature.
+    caller_file.raw_ref(
+        &["read"],
+        run,
+        2,
+        RefKind::CallCallback,
+        EdgeCondition::Always,
+        Some(3),
+    );
+    let c = caller_file.build();
+
+    let summaries = vec![
+        cgx_resolve::FileSummary::from_facts("blob-a", "src/driver_a.c", "c", &a),
+        cgx_resolve::FileSummary::from_facts("blob-b", "src/driver_b.c", "c", &b),
+        cgx_resolve::FileSummary::from_facts("blob-c", "src/caller.c", "c", &c),
+    ];
+    let facts_by_path = [
+        ("src/driver_a.c", &a),
+        ("src/driver_b.c", &b),
+        ("src/caller.c", &c),
+    ];
+
+    let run_streaming = |opts: LinkOpts| {
+        let (nodes, def_to_node, table) = cgx_resolve::build_global_index(&summaries);
+        let field_init_files = opts
+            .type_layer_disambiguation
+            .then(|| cgx_resolve::collect_field_init_index_from_summaries(&summaries));
+        let mut session =
+            cgx_resolve::LinkSession::new_with_field_inits(&table, &def_to_node, opts, field_init_files);
+        for (idx, summary) in summaries.iter().enumerate() {
+            let facts = facts_by_path
+                .iter()
+                .find(|(p, _)| *p == summary.path)
+                .unwrap()
+                .1;
+            let file = input(&summary.path, &summary.lang, facts);
+            session.resolve_file(&file, idx);
+        }
+        session.finish(nodes)
+    };
+
+    // Flag OFF: sig::run_sig's existing (lang, arity)-only matching keeps both,
+    // same as the in-memory path — the streaming wiring must not change this.
+    let mut off = run_streaming(LinkOpts::default());
+    let off_stats = cgx_resolve::run_sig(&mut off, None, false, &Default::default());
+    assert_eq!(off_stats.sites_resolved, 1);
+    let fqn_of_off: std::collections::BTreeMap<_, _> =
+        off.node_records().map(|n| (n.id, n.fqn.clone())).collect();
+    let kept_off: std::collections::BTreeSet<&str> = off
+        .edge_records()
+        .filter(|e| e.rule == "sig-compat")
+        .map(|e| fqn_of_off.get(&e.dst).map(String::as_str).unwrap())
+        .collect();
+    assert_eq!(
+        kept_off,
+        std::collections::BTreeSet::from(["driver_a::read", "driver_b::read"]),
+        "flag off on the streaming path must reproduce today's arity-only sig::run_sig behavior exactly"
+    );
+
+    // Flag ON: narrowed to driver_a::read only, via the owned field-init index
+    // built from `summaries` (mirroring how `apply_sig` builds it in the real
+    // streaming pipeline via `collect_field_init_owned_index_from_summaries`).
+    let field_init_index = cgx_resolve::collect_field_init_owned_index_from_summaries(&summaries);
+    let opts = LinkOpts {
+        type_layer_disambiguation: true,
+        ..LinkOpts::default()
+    };
+    let mut on = run_streaming(opts);
+    let on_stats = cgx_resolve::run_sig(&mut on, None, true, &field_init_index);
+    assert_eq!(on_stats.sites_resolved, 1);
+    let fqn_of_on: std::collections::BTreeMap<_, _> =
+        on.node_records().map(|n| (n.id, n.fqn.clone())).collect();
+    let kept_on: std::collections::BTreeSet<&str> = on
+        .edge_records()
+        .filter(|e| e.rule == "sig-compat")
+        .map(|e| fqn_of_on.get(&e.dst).map(String::as_str).unwrap())
+        .collect();
+    assert_eq!(
+        kept_on,
+        std::collections::BTreeSet::from(["driver_a::read"]),
+        "flag on must narrow the CallsCallback signature-compatible set on the STREAMING path \
+         the same way link() already narrows it on the in-memory path"
+    );
+}
+
 /// The actual motivating case (2026-11-17 increment): a C struct function-pointer
 /// member call (`obj->read(...)`, `RefKind::CallCallback`), not the bare-identifier
 /// `RefKind::Call` the prior increment covered. This reaches `sig::run_sig`, not
