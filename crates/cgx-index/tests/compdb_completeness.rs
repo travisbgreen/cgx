@@ -167,7 +167,7 @@ fn complete_compdb_promotes_overload_to_certain() {
             "COMPLETE compdb: resolved overload promotes to certain end-to-end"
         );
         assert_eq!(e.tier, Tier::Scip);
-        assert_eq!(e.rule, "scip-occurrence");
+        assert_eq!(e.rule.as_ref(), "scip-occurrence");
         assert_eq!(e.dst, pick_int, "span-precise redirect to the resolved overload");
         assert_eq!(e.candidate_group, None, "candidate group collapsed on certain");
     }

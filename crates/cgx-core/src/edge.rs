@@ -1,5 +1,7 @@
 //! Edge taxonomy (GM-2, GM-9, GM-16, GM-17) and the edge record.
 
+use std::sync::Arc;
+
 use crate::condition::EdgeCondition;
 use crate::confidence::{Confidence, Tier};
 use crate::cut::CutMarkers;
@@ -134,7 +136,11 @@ pub struct EdgeRecord {
     pub tier: Tier,
     /// Producing rule name (mirrors `provenance.rule`; denormalized for cheap
     /// filtering, architecture §3 `edges.rule`).
-    pub rule: String,
+    ///
+    /// `Arc<str>` (2026-11-17): every construction site passes the identical
+    /// value here and to `Provenance.rule` — see that field's doc comment.
+    /// Share one `Arc<str>` between the two instead of allocating twice.
+    pub rule: Arc<str>,
     /// Call-site this edge originates from (ADR-01); `None` on structural edges.
     pub site_id: Option<SiteId>,
     /// Intra-procedural ordering reservation (ADR-02): lexical statement index of

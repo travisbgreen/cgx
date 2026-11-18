@@ -47,7 +47,7 @@ fn call_edge(id: u32, src: u32, dst: u32) -> EdgeRecord {
         condition: EdgeCondition::Always,
         confidence: Confidence::Certain,
         tier: Tier::NameSyntactic,
-        rule: "test".to_string(),
+        rule: "test".into(),
         site_id: None,
         stmt_index: None,
         cut_markers: Default::default(),

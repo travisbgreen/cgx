@@ -28,7 +28,7 @@ fn intra_file_direct_call_resolves_certain() {
 
     let edge = g
         .edge_records()
-        .find(|e| e.kind == EdgeKind::Calls && e.rule == "scope-ref")
+        .find(|e| e.kind == EdgeKind::Calls && e.rule.as_ref() == "scope-ref")
         .expect("an intra-file resolved call edge (the scaffold produced NONE)");
     assert_eq!(edge.confidence, Confidence::Certain, "same-file direct → certain");
     assert_eq!(edge.tier, Tier::ScopeGraph);

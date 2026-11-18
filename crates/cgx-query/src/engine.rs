@@ -371,7 +371,7 @@ fn explain_edge(
         condition: r.condition,
         confidence: r.confidence,
         tier,
-        rule: r.via.rule.clone(),
+        rule: r.via.rule.to_string(),
         resolution_source,
         site,
     }

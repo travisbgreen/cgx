@@ -47,7 +47,7 @@ fn virtual_candidate_dsts(g: &ResolvedGraph) -> BTreeSet<NodeId> {
     g.edge_records()
         .filter(|e| {
             e.kind == EdgeKind::CallsVirtual
-                && (e.rule == "cha-trait-set" || e.rule == "rta-pruned")
+                && (e.rule.as_ref() == "cha-trait-set" || e.rule.as_ref() == "rta-pruned")
         })
         .map(|e| e.dst)
         .collect()
@@ -154,7 +154,7 @@ fn rta_prunes_the_never_instantiated_impl_and_upgrades_survivors_to_probable() {
 
     // The surviving group is `probable` (upgraded from CHA's `possible`), tier
     // stays ChaRta, rule is `rta-pruned`, kind unchanged.
-    let survivors: Vec<_> = g.edge_records().filter(|e| e.rule == "rta-pruned").collect();
+    let survivors: Vec<_> = g.edge_records().filter(|e| e.rule.as_ref() == "rta-pruned").collect();
     assert_eq!(survivors.len(), 2, "two survivors kept");
     for e in &survivors {
         assert_eq!(e.confidence, Confidence::Probable, "RTA upgrades survivors to probable");
@@ -190,7 +190,7 @@ fn cut_marker_guard_keeps_the_full_cha_set_when_a_construction_is_under_a_cut() 
         "under a construction-site cut the full 3-candidate CHA set is kept"
     );
     for e in g.edge_records().filter(|e| e.kind == EdgeKind::CallsVirtual) {
-        assert_eq!(e.rule, "cha-trait-set", "edges remain CHA (not rta-pruned) under the cut");
+        assert_eq!(e.rule.as_ref(), "cha-trait-set", "edges remain CHA (not rta-pruned) under the cut");
         assert_eq!(e.confidence, Confidence::Possible, "full set stays possible under the cut");
     }
 }
@@ -234,7 +234,7 @@ fn rta_pruned_to_a_single_survivor_is_still_probable_not_certain() {
     assert_eq!(stats.sites_pruned, 1);
     assert_eq!(stats.candidates_dropped, 2, "Square + Triangle dropped");
 
-    let survivors: Vec<_> = g.edge_records().filter(|e| e.rule == "rta-pruned").collect();
+    let survivors: Vec<_> = g.edge_records().filter(|e| e.rule.as_ref() == "rta-pruned").collect();
     assert_eq!(survivors.len(), 1, "single survivor");
     assert_eq!(survivors[0].dst, node_id(&g, "m::Circle::area"));
     assert_eq!(
@@ -266,7 +266,7 @@ fn rta_leaves_a_fully_instantiated_set_as_cha_possible() {
         .collect();
     assert_eq!(virtual_candidate_dsts(&g), expected, "all three impls survive");
     for e in g.edge_records().filter(|e| e.kind == EdgeKind::CallsVirtual) {
-        assert_eq!(e.rule, "cha-trait-set", "an un-narrowed set stays CHA, not rta-pruned");
+        assert_eq!(e.rule.as_ref(), "cha-trait-set", "an un-narrowed set stays CHA, not rta-pruned");
         assert_eq!(e.confidence, Confidence::Possible, "an un-narrowed set stays possible");
     }
 }
@@ -304,7 +304,7 @@ fn rta_does_not_prune_when_no_type_is_instantiated() {
 
     assert_eq!(stats.sites_pruned, 0, "no instantiation evidence ⇒ no prune");
     assert!(
-        g.edge_records().all(|e| e.rule != "rta-pruned"),
+        g.edge_records().all(|e| e.rule.as_ref() != "rta-pruned"),
         "no edge is RTA-pruned when nothing is instantiated"
     );
     for e in g.edge_records().filter(|e| e.kind == EdgeKind::CallsVirtual) {

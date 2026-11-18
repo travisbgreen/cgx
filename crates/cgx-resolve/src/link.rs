@@ -804,8 +804,8 @@ fn resolve_ref(
             // `?` when no name segment exists (e.g. `(*fp)()` with no inner
             // identifier recovered).
             let name_tag = raw.name_path.last().map(|s| s.as_str()).unwrap_or("?");
-            let r = format!("indirect:{arity_tag}:{name_tag}");
-            e.edge.rule = r.clone();
+            let r: std::sync::Arc<str> = format!("indirect:{arity_tag}:{name_tag}").into();
+            e.edge.rule = r.clone(); // shares the one allocation with `e.provenance.rule` below
             e.provenance.rule = r;
         }
         return;
@@ -1466,7 +1466,7 @@ fn summary_site_callees<'a>(
         let Some((_, outcome)) = sites.get_mut(&(e.edge.src, span.line, span.col)) else {
             continue;
         };
-        let admitted = matches!(e.edge.rule.as_str(), "scope-ref" | "import-ref")
+        let admitted = matches!(e.edge.rule.as_ref(), "scope-ref" | "import-ref")
             && e.edge.candidate_group.is_none()
             && nodes
                 .get(e.edge.dst.0 as usize)
@@ -1744,6 +1744,7 @@ fn push_data_flow_edge(
     for m in &pe.cut_markers {
         cut_markers.insert(*m);
     }
+    let rule: std::sync::Arc<str> = "derives-from".into();
     let record = EdgeRecord {
         id: EdgeId(0),
         src: derived,
@@ -1752,7 +1753,7 @@ fn push_data_flow_edge(
         condition: pe.condition,
         confidence,
         tier: Tier::ScopeGraph,
-        rule: "derives-from".to_owned(),
+        rule: rule.clone(), // shares the one allocation with `prov.rule` below
         site_id: None,
         stmt_index: None,
         cut_markers,
@@ -1763,7 +1764,7 @@ fn push_data_flow_edge(
         macro_origin: None,
         transform: Some(pe.transform),
     };
-    let prov = Provenance::new(pe.span.clone(), "derives-from", Tier::ScopeGraph, String::new());
+    let prov = Provenance::new(pe.span.clone(), rule, Tier::ScopeGraph, String::new());
     edges.push(EdgeWithProvenance {
         edge: record,
         provenance: prov,
@@ -1830,12 +1831,13 @@ fn push_structural_edge(
     kind: EdgeKind,
     span: &Span,
 ) {
-    let rule = match kind {
+    let rule: std::sync::Arc<str> = match kind {
         EdgeKind::Implements => "impl-relation",
         EdgeKind::Inherits => "supertrait",
         EdgeKind::Overrides => "trait-override",
         _ => "impl-relation",
-    };
+    }
+    .into();
     let record = EdgeRecord {
         id: EdgeId(0),
         src,
@@ -1844,7 +1846,7 @@ fn push_structural_edge(
         condition: cgx_core::condition::EdgeCondition::Always,
         confidence: Confidence::Certain,
         tier: Tier::ScopeGraph,
-        rule: rule.to_owned(),
+        rule: rule.clone(), // shares the one allocation with `prov.rule` below
         site_id: None,
         stmt_index: None,
         cut_markers: CutMarkers::new(),
@@ -2011,6 +2013,7 @@ fn push_edge(edges: &mut ChunkedVec<EdgeWithProvenance>, b: EdgeBuild<'_>) {
     for m in b.raw.cut_markers.iter() {
         cut_markers.insert(*m);
     }
+    let rule: std::sync::Arc<str> = b.rule.into();
     let record = EdgeRecord {
         id: EdgeId(0), // assigned after canonical sort
         src: b.src,
@@ -2019,7 +2022,7 @@ fn push_edge(edges: &mut ChunkedVec<EdgeWithProvenance>, b: EdgeBuild<'_>) {
         condition: b.raw.edge_condition,
         confidence: b.confidence,
         tier: b.tier,
-        rule: b.rule.to_owned(),
+        rule: rule.clone(), // shares the one allocation with `prov.rule` below
         site_id,
         stmt_index: Some(b.raw.stmt_index),
         cut_markers,
@@ -2030,7 +2033,7 @@ fn push_edge(edges: &mut ChunkedVec<EdgeWithProvenance>, b: EdgeBuild<'_>) {
         macro_origin: None,
         transform: None,
     };
-    let prov = Provenance::new(b.span.clone(), b.rule, b.tier, String::new());
+    let prov = Provenance::new(b.span.clone(), rule, b.tier, String::new());
     edges.push(EdgeWithProvenance {
         edge: record,
         provenance: prov,
@@ -2179,8 +2182,8 @@ fn emit_candidate_set(
                 .unwrap_or(LocalityTier::Global)
                 .as_str();
             if let Some(e) = edges.last_mut() {
-                let annotated = format!("name-arity:loc:{tag}");
-                e.provenance.rule = annotated.clone();
+                let annotated: std::sync::Arc<str> = format!("name-arity:loc:{tag}").into();
+                e.provenance.rule = annotated.clone(); // shares the one allocation with `e.edge.rule` below
                 e.edge.rule = annotated;
             }
         }

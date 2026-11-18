@@ -264,7 +264,7 @@ mod tests {
             condition,
             confidence,
             tier: Tier::NameSyntactic,
-            rule: "test".to_string(),
+            rule: "test".into(),
             site_id: None,
             stmt_index: None,
             cut_markers: CutMarkers::default(),

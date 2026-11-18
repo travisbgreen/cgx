@@ -237,7 +237,7 @@ fn interproc_summary_edge_materialized_end_to_end() {
     let interproc: Vec<_> = g
         .edges
         .iter()
-        .filter(|e| e.kind == EdgeKind::DerivesFrom && e.rule == "interprocedural")
+        .filter(|e| e.kind == EdgeKind::DerivesFrom && e.rule.as_ref() == "interprocedural")
         .collect();
     assert!(
         !interproc.is_empty(),
@@ -270,7 +270,7 @@ fn summary_edges_consumed_by_existing_walk_no_second_path() {
     let interproc = g
         .edges
         .iter()
-        .filter(|e| e.kind == EdgeKind::DerivesFrom && e.rule == "interprocedural")
+        .filter(|e| e.kind == EdgeKind::DerivesFrom && e.rule.as_ref() == "interprocedural")
         .count();
     assert!(interproc >= 1, "summary edges must be queryable via the edges table");
 

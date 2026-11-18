@@ -165,7 +165,7 @@ fn opaque_call_resolves_through_summary_in_sc4() {
         .edges
         .iter()
         .filter(|e| {
-            e.kind == EdgeKind::DerivesFrom && e.src == r_node.id && e.rule == "interprocedural"
+            e.kind == EdgeKind::DerivesFrom && e.src == r_node.id && e.rule.as_ref() == "interprocedural"
         })
         .collect();
     assert_eq!(

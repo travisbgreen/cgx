@@ -304,7 +304,7 @@ fn self_call_is_bounded_by_the_class_cone() {
         .filter(|e| idx.fqn_of(e.src) == "pkg::base::Mixin::run")
         .collect();
     assert_eq!(single[0].confidence, Confidence::Probable);
-    assert_eq!(single[0].rule, "recv-self");
+    assert_eq!(single[0].rule.as_ref(), "recv-self");
     assert!(o.stats.precision.self_cone.sites >= 2);
 }
 
@@ -1084,7 +1084,7 @@ fn constructor_and_field_receivers() {
         .edges
         .iter()
         .filter(|e| idx.fqn_of(e.src) == "pkg::svc::Child::go")
-        .map(|e| e.rule.as_str())
+        .map(|e| e.rule.as_ref())
         .collect();
     assert!(
         rules.contains("recv-ctor") && rules.contains("recv-field"),
@@ -1427,7 +1427,7 @@ fn external_type_keeps_in_repo_subclass_overrides() {
         .iter()
         .find(|e| idx.fqn_of(e.src) == "pkg::ext::use_dict")
         .unwrap();
-    assert_eq!(e.rule, "recv-local");
+    assert_eq!(e.rule.as_ref(), "recv-local");
     // The lookup is open (a plain `dict` has no in-repo `get`), but the site
     // is not dangled; like every narrowed site it is reported through
     // `typed_out`, so its contract is `under` (`receiver-narrowed`). An open
@@ -1576,7 +1576,7 @@ fn go_vta_types_receivers_and_locals_only() {
         .edges
         .iter()
         .filter(|e| on.fqn_of(e.src).ends_with("::Local"))
-        .map(|e| e.rule.as_str())
+        .map(|e| e.rule.as_ref())
         .collect();
     assert_eq!(rules, BTreeSet::from(["recv-vta"]));
 }

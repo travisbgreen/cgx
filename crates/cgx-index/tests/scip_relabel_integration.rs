@@ -139,7 +139,7 @@ fn scip_upgrades_free_fn_call_to_certain_via_index_path() {
         "E1: unique-def free-fn direct call must upgrade to certain via --scip"
     );
     assert_eq!(e.tier, Tier::Scip);
-    assert_eq!(e.rule, "scip-occurrence");
+    assert_eq!(e.rule.as_ref(), "scip-occurrence");
 
     // The SCIP counters must be surfaced for cgx doctor.
     let scip = outcome.stats.scip.expect("scip stats present when --scip given");
@@ -202,7 +202,7 @@ fn scip_joins_on_real_cargo_package_name_not_rust_sample() {
         "BLOCKER-2: the SCIP join must succeed on a crate not named rust_sample"
     );
     assert_eq!(e.tier, Tier::Scip);
-    assert_eq!(e.rule, "scip-occurrence");
+    assert_eq!(e.rule.as_ref(), "scip-occurrence");
 
     let scip = outcome.stats.scip.expect("scip stats present");
     assert!(

@@ -44,7 +44,7 @@ fn node_id(g: &ResolvedGraph, fqn: &str) -> NodeId {
 /// the pass produced.
 fn sig_candidate_dsts(g: &ResolvedGraph) -> BTreeSet<NodeId> {
     g.edge_records()
-        .filter(|e| e.rule == "sig-compat")
+        .filter(|e| e.rule.as_ref() == "sig-compat")
         .map(|e| e.dst)
         .collect()
 }
@@ -126,7 +126,7 @@ fn the_signature_compatible_set_is_all_possible_chararta_callscallback() {
     let mut g = link_facts(&facts);
     run_sig(&mut g, None, false, &Default::default());
 
-    let edges: Vec<_> = g.edge_records().filter(|e| e.rule == "sig-compat").collect();
+    let edges: Vec<_> = g.edge_records().filter(|e| e.rule.as_ref() == "sig-compat").collect();
     assert_eq!(edges.len(), 3, "three compatible candidates");
     for e in &edges {
         assert_eq!(e.confidence, Confidence::Possible, "sig set is `possible`");
@@ -276,7 +276,7 @@ fn supernode_cap_keeps_the_full_set_with_a_cut_marker() {
     assert_eq!(stats.sites_resolved, 1);
     assert_eq!(stats.supernode_sites, 1, "the over-cap site is counted");
 
-    let sig_edges: Vec<_> = g.edge_records().filter(|e| e.rule == "sig-compat").collect();
+    let sig_edges: Vec<_> = g.edge_records().filter(|e| e.rule.as_ref() == "sig-compat").collect();
     assert_eq!(sig_edges.len(), n, "all {n} candidates kept — nothing dropped");
     for e in &sig_edges {
         assert!(

@@ -86,7 +86,7 @@ fn const_closure_call_is_one_certain_edge_to_its_lambda() {
     let e = &edges[0];
     assert_eq!(e.dst, node_id(&g, "::pinned::double"));
     assert_eq!(e.confidence, Confidence::Certain);
-    assert_eq!(e.rule, "scope-ref");
+    assert_eq!(e.rule.as_ref(), "scope-ref");
 }
 
 #[test]
@@ -100,7 +100,7 @@ fn reassigned_and_shadowed_closure_calls_keep_the_signature_fan_out() {
         );
         assert!(edges
             .iter()
-            .all(|e| e.rule == "sig-compat" && e.confidence == Confidence::Possible));
+            .all(|e| e.rule.as_ref() == "sig-compat" && e.confidence == Confidence::Possible));
         let dsts: Vec<_> = edges.iter().map(|e| e.dst).collect();
         assert!(dsts.contains(&node_id(&g, "::one")), "{caller}");
         assert!(dsts.contains(&node_id(&g, "::pinned::double")), "{caller}");
@@ -137,5 +137,5 @@ fn closure_shadowed_by_a_for_initializer_is_not_bound_to_the_outer_lambda() {
             .any(|e| e.dst == outer && e.confidence == Confidence::Certain),
         "no certain edge to the outer lambda: {edges:?}"
     );
-    assert!(edges.iter().all(|e| e.rule == "sig-compat"));
+    assert!(edges.iter().all(|e| e.rule.as_ref() == "sig-compat"));
 }

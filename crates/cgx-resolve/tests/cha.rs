@@ -41,7 +41,7 @@ fn node_id(g: &ResolvedGraph, fqn: &str) -> NodeId {
 /// trait-scoped candidate set the pass produced).
 fn cha_candidate_dsts(g: &ResolvedGraph) -> BTreeSet<NodeId> {
     g.edge_records()
-        .filter(|e| e.kind == EdgeKind::CallsVirtual && e.rule == "cha-trait-set")
+        .filter(|e| e.kind == EdgeKind::CallsVirtual && e.rule.as_ref() == "cha-trait-set")
         .map(|e| e.dst)
         .collect()
 }
@@ -98,7 +98,7 @@ fn e3_cha_possible_set_equals_the_implements_trait_impl_set() {
     // The set is multi-candidate ⇒ possible, tier ChaRta, kind unchanged.
     for e in g
         .edge_records()
-        .filter(|e| e.rule == "cha-trait-set")
+        .filter(|e| e.rule.as_ref() == "cha-trait-set")
     {
         assert_eq!(e.confidence, Confidence::Possible, "3-candidate set is possible");
         assert_eq!(e.tier, Tier::ChaRta);
@@ -148,7 +148,7 @@ fn no_name_method_edge_survives_after_cha_rescopes_the_site() {
     run_cha(&mut g, None);
     assert_eq!(
         g.edge_records()
-            .filter(|e| e.rule == "name-method")
+            .filter(|e| e.rule.as_ref() == "name-method")
             .count(),
         0,
         "no leftover name-method virtual edge"
@@ -180,7 +180,7 @@ fn single_impl_trait_yields_a_probable_candidate() {
 
     let cha: Vec<_> = g
         .edge_records()
-        .filter(|e| e.rule == "cha-trait-set")
+        .filter(|e| e.rule.as_ref() == "cha-trait-set")
         .collect();
     assert_eq!(cha.len(), 1, "exactly one candidate for a single-impl trait");
     assert_eq!(cha[0].dst, node_id(&g, "m::English::hello"));
@@ -296,7 +296,7 @@ fn blanket_impl_over_the_cap_keeps_the_group_and_cut_marks_it() {
 
     let cha: Vec<_> = g
         .edge_records()
-        .filter(|e| e.rule == "cha-trait-set")
+        .filter(|e| e.rule.as_ref() == "cha-trait-set")
         .collect();
     assert_eq!(
         cha.len(),
@@ -325,11 +325,11 @@ fn pure_inherent_method_call_is_left_name_scoped() {
     let stats = run_cha(&mut g, None);
     assert_eq!(stats.sites_rescoped, 0, "no trait declares compute() → untouched");
     assert_eq!(
-        g.edge_records().filter(|e| e.rule == "cha-trait-set").count(),
+        g.edge_records().filter(|e| e.rule.as_ref() == "cha-trait-set").count(),
         0
     );
     assert!(
-        g.edge_records().any(|e| e.rule == "name-method"),
+        g.edge_records().any(|e| e.rule.as_ref() == "name-method"),
         "the original name-method resolution is preserved"
     );
 }

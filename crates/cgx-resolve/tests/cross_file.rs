@@ -66,7 +66,7 @@ fn same_file_direct_call_is_certain() {
         "same-file direct → certain"
     );
     assert_eq!(e.tier, Tier::ScopeGraph);
-    assert_eq!(e.rule, "scope-ref");
+    assert_eq!(e.rule.as_ref(), "scope-ref");
     assert!(e.site_id.is_some(), "call edges carry a site_id (ADR-01)");
 }
 
@@ -97,7 +97,7 @@ fn cross_file_import_resolved_call_is_probable() {
 
     let edge = g
         .edge_records()
-        .find(|e| e.rule == "import-ref")
+        .find(|e| e.rule.as_ref() == "import-ref")
         .expect("an import-resolved edge");
     assert_eq!(
         edge.confidence,
@@ -138,7 +138,7 @@ fn aliased_import_resolves_to_original_def() {
 
     let edge = g
         .edge_records()
-        .find(|e| e.rule == "import-ref")
+        .find(|e| e.rule.as_ref() == "import-ref")
         .expect("alias resolves via the original exported name");
     let dst = &g.node_records().nth(edge.dst.index()).unwrap().fqn;
     assert_eq!(dst, "crate::direct::add", "alias sum_two → direct::add");
@@ -511,7 +511,7 @@ fn name_arity_candidates_ranked_by_locality_none_dropped() {
         fallback
             .iter()
             .find(|e| fqn_of.get(&e.dst).map(String::as_str) == Some(fqn))
-            .map(|e| e.rule.clone())
+            .map(|e| e.rule.to_string())
     };
     assert_eq!(
         tag_for("crate::b::helper").as_deref(),
@@ -989,7 +989,7 @@ fn type_layer_disambiguation_streaming_path_narrows_callcallback_by_file_field_i
         off.node_records().map(|n| (n.id, n.fqn.clone())).collect();
     let kept_off: std::collections::BTreeSet<&str> = off
         .edge_records()
-        .filter(|e| e.rule == "sig-compat")
+        .filter(|e| e.rule.as_ref() == "sig-compat")
         .map(|e| fqn_of_off.get(&e.dst).map(String::as_str).unwrap())
         .collect();
     assert_eq!(
@@ -1013,7 +1013,7 @@ fn type_layer_disambiguation_streaming_path_narrows_callcallback_by_file_field_i
         on.node_records().map(|n| (n.id, n.fqn.clone())).collect();
     let kept_on: std::collections::BTreeSet<&str> = on
         .edge_records()
-        .filter(|e| e.rule == "sig-compat")
+        .filter(|e| e.rule.as_ref() == "sig-compat")
         .map(|e| fqn_of_on.get(&e.dst).map(String::as_str).unwrap())
         .collect();
     assert_eq!(
@@ -1098,7 +1098,7 @@ fn type_layer_disambiguation_prototype_narrows_callcallback_by_file_field_init()
         off.node_records().map(|n| (n.id, n.fqn.clone())).collect();
     let kept_off: std::collections::BTreeSet<&str> = off
         .edge_records()
-        .filter(|e| e.rule == "sig-compat")
+        .filter(|e| e.rule.as_ref() == "sig-compat")
         .map(|e| fqn_of_off.get(&e.dst).map(String::as_str).unwrap())
         .collect();
     assert_eq!(
@@ -1122,7 +1122,7 @@ fn type_layer_disambiguation_prototype_narrows_callcallback_by_file_field_init()
         on.node_records().map(|n| (n.id, n.fqn.clone())).collect();
     let kept_on: std::collections::BTreeSet<&str> = on
         .edge_records()
-        .filter(|e| e.rule == "sig-compat")
+        .filter(|e| e.rule.as_ref() == "sig-compat")
         .map(|e| fqn_of_on.get(&e.dst).map(String::as_str).unwrap())
         .collect();
     assert_eq!(
@@ -1177,7 +1177,7 @@ fn re_export_chain_resolves_to_original_definition() {
 
     let edge = g
         .edge_records()
-        .find(|e| e.rule == "import-ref")
+        .find(|e| e.rule.as_ref() == "import-ref")
         .expect("re-export chased to a resolved edge");
     let dst = &g.node_records().nth(edge.dst.index()).unwrap().fqn;
     assert_eq!(
@@ -1248,7 +1248,7 @@ fn cyclic_re_export_chain_terminates_and_resolves_sanely() {
     let g = link(&inputs, &LinkOpts::default());
 
     assert!(
-        g.edge_records().all(|e| e.rule != "import-ref"),
+        g.edge_records().all(|e| e.rule.as_ref() != "import-ref"),
         "a cyclic re-export with no real def must not produce a resolved import edge"
     );
     let unresolved_foo = g
@@ -1294,7 +1294,7 @@ fn frontend_cut_marker_is_carried_onto_resolved_edge() {
 
     let edge = g
         .edge_records()
-        .find(|e| e.rule == "import-ref")
+        .find(|e| e.rule.as_ref() == "import-ref")
         .expect("resolved import edge");
     assert!(
         edge.cut_markers.contains(CutMarker::ViaFfi),
@@ -1326,7 +1326,7 @@ fn edge_condition_is_preserved_from_frontend() {
         input("src/m.rs", "rust", &facts),
     ];
     let g = link(&inputs, &LinkOpts::default());
-    let edge = g.edge_records().find(|e| e.rule == "import-ref").unwrap();
+    let edge = g.edge_records().find(|e| e.rule.as_ref() == "import-ref").unwrap();
     assert_eq!(edge.condition, EdgeCondition::Loop);
 }
 
