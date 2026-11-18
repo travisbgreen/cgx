@@ -186,10 +186,11 @@ pub fn run_rta(graph: &mut ResolvedGraph) -> RtaStats {
     // `canonicalize_candidate_dsts` returns `Probable` for a singleton, `Possible`
     // for multi — but the design pins the *surviving* set to `probable`, so a
     // multi-survivor set is also upgraded to `probable`).
+    let rta_rule: std::sync::Arc<str> = RTA_RULE.into();
     for &i in &upgrade_edge_idx {
         graph.edges[i].edge.confidence = Confidence::Probable;
-        graph.edges[i].edge.rule = RTA_RULE.to_owned();
-        graph.edges[i].provenance.rule = RTA_RULE.to_owned();
+        graph.edges[i].edge.rule = rta_rule.clone();
+        graph.edges[i].provenance.rule = rta_rule.clone();
     }
 
     // Drop pruned edges and their candidate rows.
@@ -218,7 +219,7 @@ pub fn run_rta(graph: &mut ResolvedGraph) -> RtaStats {
     // dropped. Recompute survivors per touched group from the post-drop edge set.
     let mut survivors_by_group: BTreeMap<u32, Vec<NodeId>> = BTreeMap::new();
     for e in &graph.edges {
-        if e.edge.rule == RTA_RULE {
+        if e.edge.rule.as_ref() == RTA_RULE {
             if let Some(g) = e.edge.candidate_group {
                 survivors_by_group.entry(g).or_default().push(e.edge.dst);
             }
@@ -260,7 +261,7 @@ struct ChaSite {
 fn collect_cha_sites(graph: &ResolvedGraph) -> Vec<ChaSite> {
     let mut by_site: BTreeMap<(NodeId, SiteId), Vec<usize>> = BTreeMap::new();
     for (i, e) in graph.edges.iter().enumerate() {
-        if e.edge.kind == EdgeKind::CallsVirtual && e.edge.rule == CHA_RULE {
+        if e.edge.kind == EdgeKind::CallsVirtual && e.edge.rule.as_ref() == CHA_RULE {
             if let Some(site_id) = e.edge.site_id {
                 by_site.entry((e.edge.src, site_id)).or_default().push(i);
             }

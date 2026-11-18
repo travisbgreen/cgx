@@ -373,6 +373,7 @@ fn build_sig_edge(
     if over_cap {
         cut_markers.insert(CutMarker::Unresolved);
     }
+    let rule: std::sync::Arc<str> = SIG_RULE.into();
     let record = EdgeRecord {
         id: EdgeId(0), // reassigned by canonicalize
         src: proto.edge.src,
@@ -381,7 +382,7 @@ fn build_sig_edge(
         condition: proto.edge.condition,
         confidence,
         tier: Tier::ChaRta,
-        rule: SIG_RULE.to_owned(),
+        rule: rule.clone(), // shares the one allocation with `prov.rule` below
         site_id: proto.edge.site_id,
         stmt_index: proto.edge.stmt_index,
         cut_markers,
@@ -394,7 +395,7 @@ fn build_sig_edge(
     };
     let prov = Provenance::new(
         proto.provenance.span.clone(),
-        SIG_RULE,
+        rule,
         Tier::ChaRta,
         String::new(),
     );

@@ -87,11 +87,11 @@ fn pinned_call_binds_to_its_lambda_in_an_enclosing_scope() {
     assert_eq!(e.dst, f);
     assert_eq!(e.confidence, Confidence::Certain);
     assert_eq!(e.tier, Tier::ScopeGraph);
-    assert_eq!(e.rule, "scope-ref");
+    assert_eq!(e.rule.as_ref(), "scope-ref");
     assert!(e.candidate_group.is_none());
     assert!(
         !g.edge_records()
-            .any(|e| e.rule == "sig-compat" || e.rule.starts_with("indirect")),
+            .any(|e| e.rule.as_ref() == "sig-compat" || e.rule.starts_with("indirect")),
         "no indirect placeholder and no signature fan-out"
     );
 }
@@ -110,7 +110,7 @@ fn unpinned_closure_call_keeps_the_signature_fan_out() {
     assert!(g
         .edge_records()
         .filter(|e| e.src == run && e.kind == EdgeKind::CallsClosure)
-        .all(|e| e.rule == "sig-compat" && e.confidence == Confidence::Possible));
+        .all(|e| e.rule.as_ref() == "sig-compat" && e.confidence == Confidence::Possible));
 }
 
 #[test]
@@ -160,7 +160,7 @@ fn pinned_call_without_a_lambda_in_scope_falls_back_to_the_fan_out() {
     assert!(g
         .edge_records()
         .filter(|e| e.src == run && e.kind == EdgeKind::CallsClosure)
-        .all(|e| e.rule == "sig-compat" && e.confidence == Confidence::Possible));
+        .all(|e| e.rule.as_ref() == "sig-compat" && e.confidence == Confidence::Possible));
 }
 
 #[test]
@@ -182,10 +182,10 @@ fn two_same_named_lambdas_in_the_nearest_scope_are_not_guessed_between() {
     );
     let g = link_ts(&b.build());
     assert!(
-        !g.edge_records().any(|e| e.rule == "scope-ref"),
+        !g.edge_records().any(|e| e.rule.as_ref() == "scope-ref"),
         "no lexical edge when the nearest scope is ambiguous"
     );
-    assert!(g.edge_records().any(|e| e.rule == "sig-compat"));
+    assert!(g.edge_records().any(|e| e.rule.as_ref() == "sig-compat"));
 }
 
 #[test]
@@ -209,8 +209,8 @@ fn a_lambda_whose_fqn_is_shared_with_another_node_is_not_guessed_between() {
         Some(1),
     );
     let g = link_ts(&b.build());
-    assert!(!g.edge_records().any(|e| e.rule == "scope-ref"));
-    assert!(g.edge_records().any(|e| e.rule == "sig-compat"));
+    assert!(!g.edge_records().any(|e| e.rule.as_ref() == "scope-ref"));
+    assert!(g.edge_records().any(|e| e.rule.as_ref() == "sig-compat"));
 }
 
 #[test]
@@ -244,5 +244,5 @@ fn a_class_member_named_like_the_callee_is_not_a_lexical_binding() {
         .find(|e| e.src == m && e.kind == EdgeKind::CallsClosure)
         .unwrap();
     assert_eq!(e.confidence, Confidence::Certain);
-    assert_eq!(e.rule, "scope-ref");
+    assert_eq!(e.rule.as_ref(), "scope-ref");
 }

@@ -238,7 +238,7 @@ impl GraphBuilder {
                 condition: e.condition,
                 confidence: e.confidence,
                 tier: e.tier,
-                rule: e.rule.clone(),
+                rule: e.rule.as_str().into(),
                 site_id: None,
                 stmt_index: None,
                 cut_markers: Default::default(),

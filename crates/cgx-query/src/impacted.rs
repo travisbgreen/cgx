@@ -156,7 +156,7 @@ pub fn changed_symbol_marker(node: NodeId) -> EdgeRecord {
         condition: EdgeCondition::Always,
         confidence: Confidence::Certain,
         tier: Tier::NameSyntactic,
-        rule: CHANGED_SYMBOL_RULE.to_string(),
+        rule: CHANGED_SYMBOL_RULE.into(),
         site_id: None,
         stmt_index: None,
         cut_markers: Default::default(),
@@ -171,7 +171,7 @@ pub fn changed_symbol_marker(node: NodeId) -> EdgeRecord {
 
 /// Whether `edge` is the [`changed_symbol_marker`] rather than a graph fact.
 pub fn is_changed_symbol_marker(edge: &EdgeRecord) -> bool {
-    edge.id == EdgeId(u32::MAX) && edge.rule == CHANGED_SYMBOL_RULE
+    edge.id == EdgeId(u32::MAX) && edge.rule.as_ref() == CHANGED_SYMBOL_RULE
 }
 
 // --- the approximation contract ---------------------------------------------

@@ -171,7 +171,7 @@ impl GraphBuilder {
                 condition: e.condition,
                 confidence: e.confidence,
                 tier: Tier::ScopeGraph,
-                rule: "test".to_string(),
+                rule: "test".into(),
                 site_id: None,
                 stmt_index: None,
                 cut_markers: CutMarkers::from_iter_canonical(e.cut_markers.iter().copied()),

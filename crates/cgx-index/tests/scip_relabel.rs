@@ -68,7 +68,7 @@ fn call_edge(
             condition: EdgeCondition::Always,
             confidence,
             tier,
-            rule: rule.to_string(),
+            rule: rule.to_string().into(),
             site_id: None,
             stmt_index: Some(0),
             cut_markers: CutMarkers::new(),
@@ -146,7 +146,7 @@ fn e1_free_fn_direct_call_upgrades_to_certain() {
         "E1: a unique-def free-fn direct call must upgrade to certain"
     );
     assert_eq!(edge.tier, Tier::Scip);
-    assert_eq!(edge.rule, "scip-occurrence");
+    assert_eq!(edge.rule.as_ref(), "scip-occurrence");
     assert_eq!(stats.upgraded_certain, 1);
 }
 
@@ -257,7 +257,7 @@ fn existing_certain_scope_graph_edge_is_never_downgraded() {
     let edge = &graph.edges[0].edge;
     assert_eq!(edge.confidence, Confidence::Certain, "must not downgrade");
     assert_eq!(edge.tier, Tier::ScopeGraph, "tier must stay ScopeGraph");
-    assert_eq!(edge.rule, "scope-ref", "rule must be untouched");
+    assert_eq!(edge.rule.as_ref(), "scope-ref", "rule must be untouched");
 }
 
 #[test]
@@ -369,7 +369,7 @@ fn cross_crate_ref_emits_scip_dep_edge() {
         .find(|e| e.edge.rule.starts_with("scip-dep:"))
         .expect("a scip-dep: edge must exist");
     assert_eq!(
-        dep.edge.rule, "scip-dep:serde@1.0.200",
+        dep.edge.rule.as_ref(), "scip-dep:serde@1.0.200",
         "the dep edge encodes (pkg, version) in rule (R5)"
     );
     assert_eq!(dep.edge.tier, Tier::Scip);
@@ -459,6 +459,6 @@ fn no_scip_occurrence_leaves_edge_untouched() {
     let edge = &graph.edges[0].edge;
     assert_eq!(edge.confidence, Confidence::Probable);
     assert_eq!(edge.tier, Tier::ScopeGraph);
-    assert_eq!(edge.rule, "import-ref");
+    assert_eq!(edge.rule.as_ref(), "import-ref");
     assert_eq!(stats.upgraded_certain + stats.upgraded_probable + stats.dep_edges, 0);
 }

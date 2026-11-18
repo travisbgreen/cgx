@@ -22,7 +22,7 @@ fn intra_file_direct_call_resolves_certain() {
     let g = link_files(&[("src/m.cpp", &f)]);
     let edge = g
         .edge_records()
-        .find(|e| e.kind == EdgeKind::Calls && e.rule == "scope-ref")
+        .find(|e| e.kind == EdgeKind::Calls && e.rule.as_ref() == "scope-ref")
         .expect("an intra-file resolved call edge");
     assert_eq!(edge.confidence, Confidence::Certain);
     assert_eq!(edge.tier, Tier::ScopeGraph);

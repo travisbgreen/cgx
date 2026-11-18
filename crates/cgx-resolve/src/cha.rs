@@ -259,7 +259,7 @@ struct Site {
 fn collect_name_method_sites(graph: &ResolvedGraph) -> Vec<Site> {
     let mut by_site: BTreeMap<(NodeId, SiteId), Vec<usize>> = BTreeMap::new();
     for (i, e) in graph.edges.iter().enumerate() {
-        if e.edge.kind == EdgeKind::CallsVirtual && e.edge.rule == NAME_METHOD_RULE {
+        if e.edge.kind == EdgeKind::CallsVirtual && e.edge.rule.as_ref() == NAME_METHOD_RULE {
             if let Some(site_id) = e.edge.site_id {
                 by_site.entry((e.edge.src, site_id)).or_default().push(i);
             }
@@ -308,6 +308,7 @@ fn build_cha_edge(
     if over_cap {
         cut_markers.insert(CutMarker::Unresolved);
     }
+    let rule: std::sync::Arc<str> = CHA_RULE.into();
     let record = EdgeRecord {
         id: EdgeId(0), // reassigned by canonicalize
         src: proto.edge.src,
@@ -316,7 +317,7 @@ fn build_cha_edge(
         condition: proto.edge.condition,
         confidence,
         tier: Tier::ChaRta,
-        rule: CHA_RULE.to_owned(),
+        rule: rule.clone(), // shares the one allocation with `prov.rule` below
         site_id: proto.edge.site_id,
         stmt_index: proto.edge.stmt_index,
         cut_markers,
@@ -329,7 +330,7 @@ fn build_cha_edge(
     };
     let prov = Provenance::new(
         proto.provenance.span.clone(),
-        CHA_RULE,
+        rule,
         Tier::ChaRta,
         String::new(),
     );

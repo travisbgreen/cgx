@@ -296,8 +296,9 @@ impl<'g, 's> ScipRelabel<'g, 's> {
         if target_conf > edge.confidence {
             edge.confidence = target_conf;
             edge.tier = Tier::Scip;
-            edge.rule = "scip-occurrence".to_string();
-            self.graph.edges[i].provenance.rule = "scip-occurrence".to_string();
+            let rule: std::sync::Arc<str> = "scip-occurrence".into();
+            edge.rule = rule.clone(); // shares the one allocation with `provenance.rule` below
+            self.graph.edges[i].provenance.rule = rule;
             self.graph.edges[i].provenance.tier = Tier::Scip;
             match target_conf {
                 Confidence::Certain => self.stats.upgraded_certain += 1,
@@ -373,7 +374,7 @@ impl<'g, 's> ScipRelabel<'g, 's> {
         let stmt_index = self.graph.edges[src_edge_idx].edge.stmt_index;
 
         let dst = self.external_node(qname);
-        let rule = format!("scip-dep:{pkg}@{version}");
+        let rule: std::sync::Arc<str> = format!("scip-dep:{pkg}@{version}").into();
         let site_id = Some(SiteId::derive(
             qname,
             &span.file,

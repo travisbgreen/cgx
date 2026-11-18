@@ -147,7 +147,7 @@ mod tests {
             condition: EdgeCondition::Always,
             confidence: Confidence::Certain,
             tier: Tier::ScopeGraph,
-            rule: "test".to_string(),
+            rule: "test".into(),
             site_id: None,
             stmt_index: None,
             cut_markers: CutMarkers::new(),

@@ -364,7 +364,7 @@ fn interproc_flow_resolves_through_summary() {
     // The interproc edge: r#1 ⇝ p0#0 (g's param), rule "interprocedural".
     let interproc: Vec<_> = g
         .edge_records()
-        .filter(|e| e.kind == EdgeKind::DerivesFrom && e.rule == "interprocedural")
+        .filter(|e| e.kind == EdgeKind::DerivesFrom && e.rule.as_ref() == "interprocedural")
         .collect();
     assert_eq!(interproc.len(), 1, "exactly one interproc edge, got {interproc:?}");
     let e = interproc[0];
@@ -386,7 +386,7 @@ fn summary_preserves_transform_across_boundary() {
     let g = link(&[input(&facts)], &dataflow_opts());
     let e = g
         .edge_records()
-        .find(|e| e.kind == EdgeKind::DerivesFrom && e.rule == "interprocedural")
+        .find(|e| e.kind == EdgeKind::DerivesFrom && e.rule.as_ref() == "interprocedural")
         .expect("an interproc edge");
     assert_eq!(
         e.transform,
@@ -416,7 +416,7 @@ fn self_recursion_reaches_fixpoint_no_hang() {
     // The summary fixpoint terminates; we get a self-edge return#1 ⇝ p0#0.
     assert!(
         g.edge_records()
-            .any(|e| e.kind == EdgeKind::DerivesFrom && e.rule == "interprocedural"),
+            .any(|e| e.kind == EdgeKind::DerivesFrom && e.rule.as_ref() == "interprocedural"),
         "self-recursion must still produce a summary edge at fixpoint"
     );
     assert_eq!(g.dataflow.ifds_stats.budget_exceeded_sccs, 0, "no budget trip");
@@ -463,11 +463,11 @@ fn interproc_link_is_byte_identical_across_runs() {
     let g2 = link(&[input(&facts)], &dataflow_opts());
     let e1: Vec<(u32, u32, String)> = g1
         .edge_records()
-        .map(|e| (e.src.0, e.dst.0, e.rule.clone()))
+        .map(|e| (e.src.0, e.dst.0, e.rule.to_string()))
         .collect();
     let e2: Vec<(u32, u32, String)> = g2
         .edge_records()
-        .map(|e| (e.src.0, e.dst.0, e.rule.clone()))
+        .map(|e| (e.src.0, e.dst.0, e.rule.to_string()))
         .collect();
     assert_eq!(e1, e2, "interproc edge set must be byte-identical across runs");
     // The persisted summaries are also identical.
@@ -796,7 +796,7 @@ fn interproc_edges(g: &cgx_resolve::ResolvedGraph) -> Vec<(String, String)> {
         g.node_records().find(|n| n.id == id).map(|n| n.fqn.clone()).unwrap_or_default()
     };
     g.edge_records()
-        .filter(|e| e.kind == EdgeKind::DerivesFrom && e.rule == "interprocedural")
+        .filter(|e| e.kind == EdgeKind::DerivesFrom && e.rule.as_ref() == "interprocedural")
         .map(|e| (fqn(e.src), fqn(e.dst)))
         .collect()
 }
@@ -818,7 +818,7 @@ fn out_of_repo_import_takes_no_in_repo_summary() {
         &dataflow_opts(),
     );
     assert!(
-        g.edge_records().all(|e| !(e.rule == "scope-ref" || e.rule == "import-ref")),
+        g.edge_records().all(|e| !(e.rule.as_ref() == "scope-ref" || e.rule.as_ref() == "import-ref")),
         "the call must not be scope- or import-resolved in this fixture"
     );
     assert_eq!(interproc_edges(&g), Vec::<(String, String)>::new());
@@ -834,7 +834,7 @@ fn same_file_callee_applies_its_summary() {
         b.data_flow(&["crate::app::helper", "return"], 1, &["p0"], body, Transform::Copy, 2);
     });
     let g = link(&[FileInput::new("blob-app", "src/app.rs", "rust", &app)], &dataflow_opts());
-    assert!(g.edge_records().any(|e| e.rule == "scope-ref"));
+    assert!(g.edge_records().any(|e| e.rule.as_ref() == "scope-ref"));
     assert_eq!(
         interproc_edges(&g),
         vec![("crate::app::run::r#1".to_string(), "crate::app::run::p0#0".to_string())]
@@ -855,7 +855,7 @@ fn import_bound_callee_applies_its_summary() {
         ],
         &dataflow_opts(),
     );
-    assert!(g.edge_records().any(|e| e.rule == "import-ref"));
+    assert!(g.edge_records().any(|e| e.rule.as_ref() == "import-ref"));
     assert_eq!(
         interproc_edges(&g),
         vec![("crate::app::run::r#1".to_string(), "crate::app::run::p0#0".to_string())]

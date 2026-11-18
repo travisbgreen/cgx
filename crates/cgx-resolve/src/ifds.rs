@@ -354,6 +354,7 @@ fn interproc_edge(
     cut_markers: CutMarkers,
     span: &Span,
 ) -> EdgeWithProvenance {
+    let rule: std::sync::Arc<str> = "interprocedural".into();
     let record = EdgeRecord {
         id: EdgeId(0),
         src: result,
@@ -366,7 +367,8 @@ fn interproc_edge(
         tier: Tier::ScopeGraph,
         // `rule` is the denormalized provenance tag the query/`--sql` surface
         // reads; "interprocedural" marks the edge as summary-applied (criterion 1).
-        rule: "interprocedural".to_owned(),
+        // Shares the one allocation with `prov.rule` below.
+        rule: rule.clone(),
         site_id: None,
         stmt_index: None,
         cut_markers,
@@ -377,7 +379,7 @@ fn interproc_edge(
         macro_origin: None,
         transform: Some(transform),
     };
-    let prov = Provenance::new(span.clone(), "interprocedural", Tier::ScopeGraph, String::new());
+    let prov = Provenance::new(span.clone(), rule, Tier::ScopeGraph, String::new());
     EdgeWithProvenance {
         edge: record,
         provenance: prov,

@@ -55,7 +55,7 @@ fn edge(id: u32, src: u32, dst: u32, cond: EdgeCondition, conf: Confidence) -> E
         condition: cond,
         confidence: conf,
         tier: Tier::ScopeGraph,
-        rule: "import-ref".to_string(),
+        rule: "import-ref".into(),
         site_id: None,
         stmt_index: None,
         cut_markers: Default::default(),

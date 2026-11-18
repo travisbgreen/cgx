@@ -81,7 +81,7 @@ fn rta_narrows_a_dyn_call_to_probable_end_to_end() {
     let survivors: Vec<_> = g
         .edges
         .iter()
-        .filter(|e| e.kind == EdgeKind::CallsVirtual && e.rule == "rta-pruned")
+        .filter(|e| e.kind == EdgeKind::CallsVirtual && e.rule.as_ref() == "rta-pruned")
         .collect();
     assert_eq!(survivors.len(), 2, "exactly Circle + Square survive the prune");
     for e in &survivors {

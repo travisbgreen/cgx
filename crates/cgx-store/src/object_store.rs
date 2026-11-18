@@ -256,7 +256,7 @@ impl StoredEdge {
             condition: self.condition,
             confidence: self.confidence,
             tier: self.tier,
-            rule: self.rule,
+            rule: self.rule.into(),
             site_id: self.site_id,
             stmt_index: self.stmt_index,
             cut_markers: self.cut_markers,

@@ -771,7 +771,7 @@ fn explain_surfaces_scip_provenance_on_a_scip_upgraded_edge() {
     assert_eq!(edge.confidence, Confidence::Certain);
     // The call site lives in the caller's body, so file:line comes from `caller`.
     let site = edge.site.as_ref().expect("call site span");
-    assert_eq!(site.file, v.node(id_of(v.nodes(), "caller")).file);
+    assert_eq!(site.file.as_ref(), v.node(id_of(v.nodes(), "caller")).file);
 }
 
 #[test]
@@ -823,7 +823,7 @@ fn explain_outgoing_edge_takes_site_from_the_explained_symbol() {
         .find(|x| !x.incoming && x.peer.fqn == "callee")
         .expect("outgoing edge to callee");
     let site = edge.site.as_ref().expect("call site span");
-    assert_eq!(site.file, v.node(explained).file);
+    assert_eq!(site.file.as_ref(), v.node(explained).file);
     assert_eq!(site.line, v.node(explained).line_start);
 }
 

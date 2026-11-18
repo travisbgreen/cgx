@@ -163,7 +163,7 @@ prop_compose! {
             condition,
             confidence,
             tier,
-            rule,
+            rule: rule.into(),
             site_id: if has_site { Some(SiteId::derive("c", "f", src, dst)) } else { None },
             stmt_index: stmt,
             cut_markers: markers,

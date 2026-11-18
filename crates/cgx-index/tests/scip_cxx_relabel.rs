@@ -72,7 +72,7 @@ fn call_edge(
             condition: EdgeCondition::Always,
             confidence: Confidence::Possible,
             tier: Tier::NameSyntactic,
-            rule: "name-syntactic".to_string(),
+            rule: "name-syntactic".into(),
             site_id: None,
             stmt_index: Some(0),
             cut_markers: CutMarkers::default(),
@@ -163,7 +163,7 @@ fn overload_promotes_to_certain_under_complete_compdb() {
     let e = call_edge_of(&g);
     assert_eq!(e.confidence, Confidence::Certain, "COMPLETE compdb: resolved overload → certain");
     assert_eq!(e.tier, Tier::Scip);
-    assert_eq!(e.rule, "scip-occurrence");
+    assert_eq!(e.rule.as_ref(), "scip-occurrence");
     // Span-precise redirect: the call now points at app::f(int) (node 1), NOT the
     // lexically-last node 2 that the signature-free qname map would have picked.
     assert_eq!(e.dst, NodeId(1), "redirected to the exact resolved overload by def-site span");
